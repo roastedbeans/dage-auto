@@ -41,19 +41,25 @@ BACKGROUND_APP_ORDER = [
 # macOS key codes for digits 1-6 and Escape (kVK_Escape = 53)
 MAC_KEY_CODES = {"1": 18, "2": 19, "3": 20, "4": 21, "5": 22, "6": 23, "escape": 53}
 
-# Class combos: (combo, delay) or (combo, delay, escape_after_keys)
-# escape_after_keys: keys that trigger Escape after press (e.g. buff skills that target self)
+# Class combos: (combo, delay)
 CLASSES = {
     "random": ("2345", 0.1),
-    "archmage": ("3214321432145", 0.8, {"5"}),  # Optimal rotation, ultimate (5) on 3rd loop, Escape after (damages self)
+    "archmage": ("3214321432145", 0.8),
     "lightcaster": ("423523232", 0.65),
-    "archpaladin": ("42352235", 1.0, {"3"}),  # 3 is heal, Escape after to avoid self-target
+    "archpaladin": ("42352235", 1.0),
     "scarlet sorceress": ("523532534", 0.65),
     "cavalier guard": ("6452324325", 0.75),
     "dragon of time": ("23543", 0.8),
     "blaze binder": ("2354", 0.1),
-    "legion revenant": ("4523", 1.0, {"4"}),  # 4 is buff, Escape after to avoid self-target
+    "legion revenant": ("4523", 1.0),
     "lord of order": ("2345", 0.5),
+}
+
+# Keys that need Escape after press to cancel self-target (when user enables the option)
+ESCAPE_AFTER_KEYS = {
+    "archmage": {"5"},
+    "archpaladin": {"3"},
+    "legion revenant": {"4"},
 }
 
 running = True
@@ -284,15 +290,20 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     accept_drop_pos = config.get("accept_drop_pos")
     no_consumable = config.get("no_consumable", False)
     no_background = config.get("no_background", False)
+    escape_self_target = config.get("escape_self_target", False)
+    escape_after_key = config.get("escape_after_key")  # For custom: "3", "4", "5" or None
 
     # Resolve combo, delay, escape_after_keys
     escape_after_keys = None
     if class_name and class_name in CLASSES:
         preset = CLASSES[class_name]
         combo, delay = preset[0], preset[1]
-        escape_after_keys = frozenset(preset[2]) if len(preset) > 2 else None
+        if escape_self_target and class_name in ESCAPE_AFTER_KEYS:
+            escape_after_keys = frozenset(ESCAPE_AFTER_KEYS[class_name])
     else:
         combo = attack if attack and all(c in "123456" for c in attack) else "412344"
+        if escape_self_target and escape_after_key and escape_after_key in "345":
+            escape_after_keys = frozenset(escape_after_key)
 
     # Target app (macOS)
     target_pid = None
@@ -310,6 +321,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
 
     _log("\n--- Running ---")
     _log(f"  Combo: {combo}  Delay: {delay}s")
+    _log(f"  Escape after self-target: {'Yes' if escape_after_keys else 'No'}")
     _log(f"  Target app: {target_app_name or 'focused window'}")
     _log(f"  Quest turn-in: {'Yes' if quest_pos else 'No'}")
     _log(f"  Accept drop: {'Yes' if accept_drop_pos else 'No'}")
@@ -435,6 +447,18 @@ Examples:
         help="Keys go to focused window instead of auto-targeting app.",
     )
     ap.add_argument(
+        "--escape-self-target",
+        action="store_true",
+        help="Press Escape after self-target skills (archmage, legion revenant, archpaladin).",
+    )
+    ap.add_argument(
+        "--escape-after-key",
+        type=str,
+        choices=["3", "4", "5"],
+        metavar="KEY",
+        help="For custom attack: escape after this key (use with --escape-self-target).",
+    )
+    ap.add_argument(
         "--no-psn",
         action="store_true",
         help="Use postToPid instead of PSN (default is PSN for Artix).",
@@ -449,7 +473,7 @@ Examples:
         print("\nClasses:\n")
         for name, preset in CLASSES.items():
             combo, delay = preset[0], preset[1]
-            extra = f"  (Escape after {', '.join(preset[2])})" if len(preset) > 2 else ""
+            extra = f"  (use --escape-self-target)" if name in ESCAPE_AFTER_KEYS else ""
             print(f"  {name:15} combo={combo}  delay={delay}s{extra}")
         print("\nUse: python aqw_auto.py ability --class <name>")
         print("Or:  python aqw_auto.py ability --attack 412344")
@@ -466,13 +490,16 @@ Examples:
         combo, delay = preset[0], preset[1]
         if args.delay is not None:
             delay = args.delay
-        escape_after_keys = preset[2] if len(preset) > 2 else None
-        esc_note = " (Escape after 4)" if escape_after_keys else ""
+        if getattr(args, "escape_self_target", False) and args.class_name in ESCAPE_AFTER_KEYS:
+            escape_after_keys = frozenset(ESCAPE_AFTER_KEYS[args.class_name])
+        esc_note = " (Escape after self-target)" if escape_after_keys else ""
         print(f"Using class '{args.class_name}': {combo} @ {delay}s{esc_note}")
     elif args.attack:
         combo = args.attack
         delay = args.delay if args.delay is not None else 1.0
-        print(f"Using attack pattern: {combo} @ {delay}s")
+        if getattr(args, "escape_self_target", False) and getattr(args, "escape_after_key", None):
+            escape_after_keys = frozenset(args.escape_after_key)
+        print(f"Using attack pattern: {combo} @ {delay}s" + (" (Escape after self-target)" if escape_after_keys else ""))
     else:
         print("Error: provide --class or --attack")
         ap.print_help()

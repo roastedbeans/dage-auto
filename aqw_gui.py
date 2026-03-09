@@ -49,7 +49,7 @@ log_queue = None
 log_lines = []
 
 
-def build_config(cls, attack, delay, quest, no_consumable, no_bg, quest_pos, accept_drop, accept_drop_pos):
+def build_config(cls, attack, delay, quest, no_consumable, no_bg, escape_self_target, escape_after_key, quest_pos, accept_drop, accept_drop_pos):
     """Build config dict for run_ability_from_gui."""
     if cls and cls != "Custom":
         class_name, attack = cls, ""
@@ -68,6 +68,8 @@ def build_config(cls, attack, delay, quest, no_consumable, no_bg, quest_pos, acc
         "accept_drop_pos": accept_drop_pos if (accept_drop and accept_drop_pos and len(accept_drop_pos) == 2) else None,
         "no_consumable": no_consumable,
         "no_background": no_bg,
+        "escape_self_target": escape_self_target,
+        "escape_after_key": escape_after_key,
     }
 
 
@@ -146,8 +148,20 @@ class MainPage(QWidget):
         opts_layout.addWidget(self.accept_drop_status)
         self.no_consumable_cb = QCheckBox("No consumable (key 6)")
         self.no_bg_cb = QCheckBox("Foreground mode")
+        self.escape_self_target_cb = QCheckBox("Escape after self-target skills")
+        self.escape_self_target_cb.setToolTip("Press Escape after buff/heal skills that target self (archmage, legion revenant, archpaladin)")
         opts_layout.addWidget(self.no_consumable_cb)
         opts_layout.addWidget(self.no_bg_cb)
+        opts_layout.addWidget(self.escape_self_target_cb)
+        escape_hint = QLabel("(Self-target can be disabled in game: Advanced Options)")
+        escape_hint.setStyleSheet("color: gray; font-size: 11px;")
+        opts_layout.addWidget(escape_hint)
+        escape_key_row = QHBoxLayout()
+        escape_key_row.addWidget(QLabel("Escape after key (Custom):"))
+        self.escape_after_combo = QComboBox()
+        self.escape_after_combo.addItems(["None", "3", "4", "5"])
+        escape_key_row.addWidget(self.escape_after_combo)
+        opts_layout.addLayout(escape_key_row)
         layout.addWidget(opts)
 
         # Buttons
@@ -175,6 +189,7 @@ class MainPage(QWidget):
     def _on_class_change(self):
         is_custom = self.class_combo.currentText() == "Custom"
         self.attack_edit.setVisible(is_custom)
+        self.escape_after_combo.setEnabled(is_custom)
         if not is_custom:
             preset = CLASSES.get(self.class_combo.currentText(), ("2345", 1.0))
             self.delay_spin.setValue(preset[1])
@@ -245,9 +260,11 @@ class MainPage(QWidget):
         if self.accept_drop_cb.isChecked() and not self.accept_drop_pos:
             QMessageBox.critical(self, "Error", "Record accept drop position first")
             return
+        escape_after = None if self.escape_after_combo.currentText() == "None" else self.escape_after_combo.currentText()
         config = build_config(cls, attack, delay,
                              self.quest_cb.isChecked(), self.no_consumable_cb.isChecked(),
-                             self.no_bg_cb.isChecked(), self.quest_pos,
+                             self.no_bg_cb.isChecked(), self.escape_self_target_cb.isChecked(),
+                             escape_after, self.quest_pos,
                              self.accept_drop_cb.isChecked(), self.accept_drop_pos)
         if config is None:
             QMessageBox.critical(self, "Error", "Invalid attack pattern")
