@@ -39,10 +39,16 @@ jobs:
 
       - name: Zip app for release
         run: |
+          # Ensure fix-quarantine and step images exist
+          [ -f "scripts/fix-quarantine.command" ] || { echo "Missing scripts/fix-quarantine.command"; exit 1; }
+          [ -f "steps/1st-step.png" ] || { echo "Missing steps/1st-step.png"; exit 1; }
+          [ -f "steps/2nd-step.png" ] || { echo "Missing steps/2nd-step.png"; exit 1; }
+          [ -f "steps/3rd-step.png" ] || { echo "Missing steps/3rd-step.png"; exit 1; }
           cp scripts/fix-quarantine.command dist/
           cp steps/1st-step.png steps/2nd-step.png steps/3rd-step.png dist/
           chmod +x dist/fix-quarantine.command
           cd dist && zip -r "../Dage-Auto-macOS.zip" "Dage Auto.app" "fix-quarantine.command" "1st-step.png" "2nd-step.png" "3rd-step.png" && cd ..
+          unzip -l ../Dage-Auto-macOS.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
