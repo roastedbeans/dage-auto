@@ -48,7 +48,7 @@ jobs:
           cp steps/1st-step.png steps/2nd-step.png steps/3rd-step.png dist/
           chmod +x dist/fix-quarantine.command
           cd dist && zip -r "../Dage-Auto-macOS.zip" "Dage Auto.app" "fix-quarantine.command" "1st-step.png" "2nd-step.png" "3rd-step.png" && cd ..
-          unzip -l ../Dage-Auto-macOS.zip
+          unzip -l Dage-Auto-macOS.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
