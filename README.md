@@ -23,6 +23,11 @@ Output: `dist/Dage Auto.app`
 
 Pre-built macOS app: [Releases](https://github.com/roastedbeans/dage-auto/releases)
 
+**If you see "damaged and can't be opened":** macOS quarantines downloaded apps. After unzipping, double-click `fix-quarantine.command` in the folder, or run in Terminal:
+```bash
+xattr -cr "/path/to/Dage Auto.app"
+```
+
 To create a new release, push a version tag:
 
 ```bash

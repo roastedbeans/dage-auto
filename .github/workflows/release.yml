@@ -31,14 +31,18 @@ jobs:
 
       - name: Zip app for release
         run: |
+          cp scripts/fix-quarantine.command dist/
+          chmod +x dist/fix-quarantine.command
           cd dist
-          zip -r "Dage-Auto-macOS.zip" "Dage Auto.app"
+          zip -r "Dage-Auto-macOS.zip" "Dage Auto.app" "fix-quarantine.command"
           cd ..
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Dage-Auto-macOS.zip
+          files: |
+            dist/Dage-Auto-macOS.zip
+            dist/fix-quarantine.command
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
