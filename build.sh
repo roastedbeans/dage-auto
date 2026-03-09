@@ -2,10 +2,14 @@
 # Build Dage Auto.app (standalone, no Python needed to run)
 set -e
 cd "$(dirname "$0")"
-[ -d "venv" ] && source venv/bin/activate
-
-pip install -q pyinstaller
-python3 -m PyInstaller aqw.spec --noconfirm
+if [ -d "venv" ]; then
+  PYTHON="./venv/bin/python"
+  "$PYTHON" -m pip install -q pyinstaller pyautogui pynput PySide6
+else
+  PYTHON="python3"
+  pip install -q pyinstaller pyautogui pynput PySide6
+fi
+"$PYTHON" -m PyInstaller aqw.spec --noconfirm
 
 APP="dist/Dage Auto.app"
 EXE="dist/Dage Auto"

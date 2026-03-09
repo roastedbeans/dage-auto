@@ -3,12 +3,26 @@
 Dage Auto - Desktop GUI for Adventure Quest Worlds automation.
 """
 
+import os
 import queue
 import sys
 import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+
+def _icon_path():
+    """Return path to app icon (icns in bundle, or png when running from source)."""
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+        icns = os.path.normpath(os.path.join(base, "..", "Resources", "Dage.icns"))
+        if os.path.isfile(icns):
+            return icns
+    png = Path(__file__).parent / "dage-icon.png"
+    if png.is_file():
+        return str(png)
+    return None
 import aqw_auto
 from aqw_auto import CLASSES, run_ability_from_gui
 
@@ -19,7 +33,7 @@ try:
         QGroupBox, QTextEdit, QMessageBox,
     )
     from PySide6.QtCore import QTimer
-    from PySide6.QtGui import QFont
+    from PySide6.QtGui import QFont, QIcon
 except ImportError:
     print("Install PySide6: pip install PySide6")
     sys.exit(1)
@@ -276,6 +290,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Dage Auto")
         self.setMinimumSize(360, 420)
+        icon_path = _icon_path()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -285,6 +302,9 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    icon_path = _icon_path()
+    if icon_path:
+        app.setWindowIcon(QIcon(icon_path))
     w = MainWindow()
     w.show()
     sys.exit(app.exec())

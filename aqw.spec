@@ -7,7 +7,11 @@ a = Analysis(
     datas=[
         ('aqw_auto.py', '.'),
     ],
-    hiddenimports=['aqw_auto'],
+    hiddenimports=[
+        'aqw_auto',
+        'pyautogui',
+        'pynput',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

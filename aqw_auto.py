@@ -27,8 +27,6 @@ target_pid = None
 target_pids = []  # PIDs to try (main first for Electron, then Renderer)
 use_psn_backend = False  # Use CGEventPostToPSN instead of postToPid (may work for Electron)
 target_app_name = None
-# Focus mode: briefly activate app, send keys, restore (for Electron apps like Artix Launcher)
-use_focus_mode = False
 
 # Apps to try for --background (first running one is used)
 # Artix Game Launcher = installed desktop client (exact name from /Applications)
@@ -186,63 +184,9 @@ def _press_key_to_app(char: str, pid: int, use_psn: bool = False):
             pass
 
 
-def _activate_app_by_name(name: str) -> bool:
-    """Activate (focus) app by name. Uses AppleScript for reliability."""
-    if sys.platform != "darwin":
-        return False
-    try:
-        script = f'tell application "{name}" to activate'
-        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=2)
-        return True
-    except Exception:
-        return False
-
-
-def _get_frontmost_app():
-    """Get (app_name, pid) of frontmost app, or None."""
-    if sys.platform != "darwin":
-        return None
-    try:
-        from AppKit import NSWorkspace
-        app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        if app:
-            return (app.localizedName(), int(app.processIdentifier()))
-        return None
-    except Exception:
-        return None
-
-
-def _press_key_via_applescript(char: str) -> bool:
-    """Send key via AppleScript (to frontmost app). Returns True if successful."""
-    if sys.platform != "darwin":
-        return False
-    try:
-        if char == "escape":
-            script = 'tell application "System Events" to key code 53'  # Escape
-        elif char in "123456":
-            script = f'tell application "System Events" to keystroke "{char}"'
-        else:
-            return False
-        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=1)
-        return True
-    except Exception:
-        return False
-
-
 def _press_key(char: str):
     """Press a key using pynput, or send to target app if --app is set (macOS)."""
-    global target_pid, target_pids, use_focus_mode
-    # Focus mode: caller activates app first, we send to focused window
-    if use_focus_mode:
-        if _press_key_via_applescript(char):
-            return
-        if char == "escape":
-            keyboard_ctrl.press(Key.esc)
-            keyboard_ctrl.release(Key.esc)
-        else:
-            keyboard_ctrl.press(char)
-            keyboard_ctrl.release(char)
-        return
+    global target_pid, target_pids
     pid_to_use = target_pids[0] if target_pids else target_pid
     if char == "escape":
         if pid_to_use:
@@ -259,15 +203,10 @@ def _press_key(char: str):
 
 def run_ability_combo(combo: str, delay: float, escape_after_keys: frozenset | set | None = None):
     """Loop: press 1 (target enemy first) + combo keys. escape_after_keys: press Escape after these (e.g. buff skills)."""
-    global running, is_paused, use_focus_mode, target_app_name
+    global running, is_paused
     escape_after = escape_after_keys or frozenset()
-    prev = None
     while running:
         if not is_paused:
-            if use_focus_mode and target_app_name:
-                prev = _get_frontmost_app()
-                _activate_app_by_name(target_app_name)
-                time.sleep(0.06)
             _press_key("1")
             time.sleep(0.12)
             for key in combo:
@@ -276,26 +215,15 @@ def run_ability_combo(combo: str, delay: float, escape_after_keys: frozenset | s
                     time.sleep(0.04)
                     _press_key("escape")
                 time.sleep(delay)
-            if use_focus_mode and prev:
-                time.sleep(0.02)
-                _activate_app_by_name(prev[0])
         time.sleep(0.03)
 
 
 def run_consumable(interval: float = 1.0):
     """Press consumable key (6) periodically."""
-    global running, is_paused, use_focus_mode, target_app_name
+    global running, is_paused
     while running:
         if not is_paused:
-            prev = None
-            if use_focus_mode and target_app_name:
-                prev = _get_frontmost_app()
-                _activate_app_by_name(target_app_name)
-                time.sleep(0.05)
             _press_key("6")
-            if use_focus_mode and prev:
-                time.sleep(0.02)
-                _activate_app_by_name(prev[0])
         time.sleep(interval)
 
 
@@ -343,7 +271,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     Run ability combo in-process (from GUI). Avoids spawning a second app in the Dock.
     config: class_name, attack, delay, quest_turnin, quest_pos, no_consumable, no_background
     """
-    global running, is_paused, target_pid, target_pids, target_app_name, use_focus_mode, use_psn_backend
+    global running, is_paused, target_pid, target_pids, target_app_name, use_psn_backend
     globals()["_log_queue"] = log_queue
 
     class_name = config.get("class_name") or ""
@@ -369,7 +297,6 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     target_pid = None
     target_pids = []
     target_app_name = None
-    use_focus_mode = False
     use_psn_backend = True
     app_name = None
     if sys.platform == "darwin" and not no_background:
@@ -507,16 +434,6 @@ Examples:
         help="Keys go to focused window instead of auto-targeting app.",
     )
     ap.add_argument(
-        "--focus",
-        action="store_true",
-        help="Force focus mode (activate window per combo).",
-    )
-    ap.add_argument(
-        "--no-focus",
-        action="store_true",
-        help="Disable focus mode (background keys may not work for Artix).",
-    )
-    ap.add_argument(
         "--no-psn",
         action="store_true",
         help="Use postToPid instead of PSN (default is PSN for Artix).",
@@ -561,7 +478,7 @@ Examples:
         sys.exit(1)
 
     # Target app for background key sending (macOS) - default: auto-find app
-    global target_pid, target_pids, target_app_name, use_focus_mode, use_psn_backend
+    global target_pid, target_pids, target_app_name, use_psn_backend
     if sys.platform != "darwin":
         if args.app or not args.no_background:
             print("Warning: Background mode is macOS only. Keys will go to focused window.")
@@ -570,22 +487,17 @@ Examples:
             target_pid = _get_pid_for_app(args.app)
             if target_pid:
                 target_app_name = args.app
-                use_focus_mode = args.focus or False
                 use_psn_backend = not args.no_psn
                 renderers = _get_renderer_pids(target_pid)
                 target_pids = [target_pid] + renderers if renderers else [target_pid]
-                if use_focus_mode:
-                    print(f"Targeting {args.app} (focus mode)")
-                else:
-                    method = "PSN" if use_psn_backend else "PID"
-                    pid_info = f"{method} {target_pids[0]}" + (f" (+{len(target_pids)-1} fallback)" if len(target_pids) > 1 else "")
-                    print(f"Targeting app: {args.app} ({pid_info})")
+                method = "PSN" if use_psn_backend else "PID"
+                pid_info = f"{method} {target_pids[0]}" + (f" (+{len(target_pids)-1} fallback)" if len(target_pids) > 1 else "")
+                print(f"Targeting app: {args.app} ({pid_info})")
             else:
                 print(f"Warning: App '{args.app}' not found. Keys will go to focused window.")
                 target_pid = None
                 target_pids = []
                 target_app_name = None
-                use_focus_mode = False
                 use_psn_backend = False
         elif not args.no_background:
             found = _find_background_app()
@@ -593,22 +505,17 @@ Examples:
                 app_name, target_pid = found
                 target_app_name = app_name
                 args.app = app_name  # For display
-                use_focus_mode = args.focus or False
                 use_psn_backend = not args.no_psn
                 renderers = _get_renderer_pids(target_pid)
                 target_pids = [target_pid] + renderers if renderers else [target_pid]
-                if use_focus_mode:
-                    print(f"Background mode: targeting {app_name} (focus mode)")
-                else:
-                    method = "PSN" if use_psn_backend else "PID"
-                    pid_info = f"{method} {target_pids[0]}" + (f" (+{len(target_pids)-1} fallback)" if len(target_pids) > 1 else "")
-                    print(f"Background mode: targeting {app_name} ({pid_info})")
+                method = "PSN" if use_psn_backend else "PID"
+                pid_info = f"{method} {target_pids[0]}" + (f" (+{len(target_pids)-1} fallback)" if len(target_pids) > 1 else "")
+                print(f"Background mode: targeting {app_name} ({pid_info})")
             else:
                 print("Warning: No AQW app found (Chrome, Safari, Arc, etc.). Keys will go to focused window.")
                 target_pid = None
                 target_pids = []
                 target_app_name = None
-                use_focus_mode = False
                 use_psn_backend = False
 
     # Quest turn-in positions
