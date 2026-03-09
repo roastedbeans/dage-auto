@@ -119,7 +119,7 @@ class MainPage(QWidget):
         self.delay_spin = QDoubleSpinBox()
         self.delay_spin.setRange(0.1, 2)
         self.delay_spin.setSingleStep(0.1)
-        self.delay_spin.setValue(0.5)
+        self.delay_spin.setValue(1.0)
         delay_row.addWidget(self.delay_spin)
         layout.addLayout(delay_row)
 
@@ -176,7 +176,7 @@ class MainPage(QWidget):
         is_custom = self.class_combo.currentText() == "Custom"
         self.attack_edit.setVisible(is_custom)
         if not is_custom:
-            preset = CLASSES.get(self.class_combo.currentText(), ("2345", 0.5))
+            preset = CLASSES.get(self.class_combo.currentText(), ("2345", 1.0))
             self.delay_spin.setValue(preset[1])
 
     def _record_quest(self):

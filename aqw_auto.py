@@ -45,6 +45,7 @@ MAC_KEY_CODES = {"1": 18, "2": 19, "3": 20, "4": 21, "5": 22, "6": 23, "escape":
 # escape_after_keys: keys that trigger Escape after press (e.g. buff skills that target self)
 CLASSES = {
     "random": ("2345", 0.1),
+    "archmage": ("3214321432145", 0.8, {"5"}),  # Optimal rotation, ultimate (5) on 3rd loop, Escape after (damages self)
     "lightcaster": ("423523232", 0.65),
     "archpaladin": ("42352235", 1.0, {"3"}),  # 3 is heal, Escape after to avoid self-target
     "scarlet sorceress": ("523532534", 0.65),
@@ -276,7 +277,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
 
     class_name = config.get("class_name") or ""
     attack = config.get("attack", "")
-    delay = config.get("delay", 0.5)
+    delay = config.get("delay", 1.0)
     quest_turnin = config.get("quest_turnin", False)
     quest_pos = config.get("quest_pos")
     accept_drop = config.get("accept_drop", False)
@@ -393,7 +394,7 @@ Examples:
         type=float,
         default=None,
         metavar="SEC",
-        help="Delay between keys (default: class preset or 0.5 for --attack)",
+        help="Delay between keys (default: class preset or 1.0 for --attack)",
     )
     ap.add_argument(
         "-q", "--quest-turnin",
@@ -470,7 +471,7 @@ Examples:
         print(f"Using class '{args.class_name}': {combo} @ {delay}s{esc_note}")
     elif args.attack:
         combo = args.attack
-        delay = args.delay if args.delay is not None else 0.5
+        delay = args.delay if args.delay is not None else 1.0
         print(f"Using attack pattern: {combo} @ {delay}s")
     else:
         print("Error: provide --class or --attack")

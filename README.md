@@ -5,6 +5,8 @@ Adventure Quest Worlds automation — auto abilities and quest turn-in.
 ## Quick start
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python aqw_gui.py
 ```
@@ -19,14 +21,21 @@ Opens a desktop window. Pick class, set delay, Start/Stop.
 
 Output: `dist/Dage Auto.app`
 
-## Download (Releases)
+## Using the macOS standalone app
 
-Pre-built macOS app: [Releases](https://github.com/roastedbeans/dage-auto/releases)
+1. **Download** the latest release: [Releases](https://github.com/roastedbeans/dage-auto/releases) → download `Dage-Auto-macOS.zip`
+2. **Extract** the zip (double-click or right-click → Open)
+3. **Fix quarantine** (if you see "damaged and can't be opened"):
+   - Double-click `fix-quarantine.command` in the folder, or
+   - In Terminal: `xattr -cr "/path/to/Dage Auto.app"`
+4. **Grant Accessibility** (System Settings → Privacy & Security → Accessibility → add Dage Auto) — required for sending keys to the game
+5. **Open** `Dage Auto.app`
 
-**If you see "damaged and can't be opened":** macOS quarantines downloaded apps. After unzipping, double-click `fix-quarantine.command` in the folder, or run in Terminal:
-```bash
-xattr -cr "/path/to/Dage Auto.app"
-```
+**If you rebuilt or updated the app:** Remove the old Dage Auto from Accessibility first, then add the new app again. Old entries can block the new build from working.
+
+The zip includes step images (`1st-step.png`, `2nd-step.png`, `3rd-step.png`) as a visual guide.
+
+## Creating a release
 
 To create a new release, push a version tag:
 
