@@ -29,20 +29,24 @@ jobs:
       - name: Build app
         run: ./build.sh
 
+      - name: Verify build output
+        run: |
+          if [ ! -d "dist/Dage Auto.app" ]; then
+            echo "Build failed: Dage Auto.app not found"
+            ls -la dist/
+            exit 1
+          fi
+
       - name: Zip app for release
         run: |
           cp scripts/fix-quarantine.command dist/
           chmod +x dist/fix-quarantine.command
-          cd dist
-          zip -r "Dage-Auto-macOS.zip" "Dage Auto.app" "fix-quarantine.command"
-          cd ..
+          cd dist && zip -r "../Dage-Auto-macOS.zip" "Dage Auto.app" "fix-quarantine.command" && cd ..
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/Dage-Auto-macOS.zip
-            dist/fix-quarantine.command
+          files: Dage-Auto-macOS.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
