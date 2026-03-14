@@ -40,7 +40,7 @@ try:
         QLabel, QComboBox, QLineEdit, QDoubleSpinBox, QCheckBox, QPushButton,
         QGroupBox, QTextEdit, QMessageBox,
     )
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import QTimer, Qt
     from PySide6.QtGui import QFont, QIcon
 except ImportError:
     print("Install PySide6: pip install PySide6")
@@ -413,6 +413,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         layout.addWidget(MainPage())
+
+        version_label = QLabel(f"v{APP_VERSION}" if _UPDATER_AVAILABLE else "")
+        version_label.setStyleSheet("color: gray; font-size: 10px;")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(version_label)
 
         if _UPDATER_AVAILABLE:
             updater.start_check(GITHUB_REPO, APP_VERSION)
