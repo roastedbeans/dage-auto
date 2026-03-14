@@ -14,13 +14,21 @@ import threading
 try:
     import pyautogui
     from pynput import keyboard
-    from pynput.keyboard import Controller as KeyController, Key
+    from pynput.keyboard import Controller as KeyController
 except ImportError:
     print("Missing dependencies. Run: pip install pyautogui pynput")
     sys.exit(1)
 
 # Use pynput for key presses (pyautogui has "Key not implemented" on macOS for numbers)
-keyboard_ctrl = KeyController()
+# Lazy-initialized on first key press to avoid blocking the GUI during import
+_keyboard_ctrl = None
+
+
+def _get_keyboard_ctrl() -> KeyController:
+    global _keyboard_ctrl
+    if _keyboard_ctrl is None:
+        _keyboard_ctrl = KeyController()
+    return _keyboard_ctrl
 
 # When set, keys are sent to this app (macOS only) - allows multitasking
 target_pid = None
@@ -38,29 +46,113 @@ BACKGROUND_APP_ORDER = [
     "Firefox",
 ]
 
-# macOS key codes for digits 1-6 and Escape (kVK_Escape = 53)
-MAC_KEY_CODES = {"1": 18, "2": 19, "3": 20, "4": 21, "5": 22, "6": 23, "escape": 53}
+# macOS key codes for digits 1-6
+# Note: 0x16=22 is key 6, 0x17=23 is key 5 on Mac number row
+MAC_KEY_CODES = {"1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22}
 
-# Class combos: (combo, delay)
+# Class combos: (combo, delay). Delay None = compute from CLASS_COOLDOWNS.
 CLASSES = {
     "random": ("2345", 0.1),
-    "archmage": ("3214321432145", 0.8),
-    "lightcaster": ("423523232", 0.65),
-    "archpaladin": ("42352235", 1.0),
-    "scarlet sorceress": ("523532534", 0.65),
-    "cavalier guard": ("6452324325", 0.75),
-    "dragon of time": ("23543", 0.8),
-    "blaze binder": ("2354", 0.1),
-    "legion revenant": ("4523", 1.0),
-    "lord of order": ("2345", 0.5),
+    "archmage": ("3214321432145", None),  # Arcane Sigil (5) costs 40% HP
+    "lightcaster": ("423523232", None),
+    "archpaladin": ("423523", None),  # Hymn of Light (3) heals self
+    "scarlet sorceress": ("523532534", None),
+    "cavalier guard": ("6524325234", None),
+    "dragon of time": ("23543", None),  # 2&4 cost 10% HP per target; use Safe mode for solo
+    "blaze binder": ("2354", None),
+    "legion revenant": ("4523", None),  # Depraved Empowerment (4) targets self
+    "lord of order": ("2345", None),
+    "void highlord": ("2345234234", None),  # 2&4 cost 20% HP; 3 has lifesteal heal
+    "timeless chronomancer": ("42224253", None),  # Delay auto-computed when pattern selected
+    "chrono shadowhunter": ("24444445", None),  # 2=Reload, 4=FMJ bullets, 5=Silver Bullet nuke
 }
 
-# Keys that need Escape after press to cancel self-target (when user enables the option)
-ESCAPE_AFTER_KEYS = {
-    "archmage": {"5"},
-    "archpaladin": {"3"},
-    "legion revenant": {"4"},
+# Skill cooldowns (seconds) - from AQW wiki. Used to compute min delay.
+CLASS_COOLDOWNS = {
+    "archmage": {"1": 1.5, "2": 4.0, "3": 2.4, "4": 4.0, "5": 3.0},
+    "archpaladin": {"1": 2.0, "2": 5.0, "3": 10.0, "4": 25.0, "5": 25.0},
+    "blaze binder": {"1": 2.0, "2": 4.0, "3": 8.0, "4": 16.0, "5": 12.0},
+    "cavalier guard": {"1": 2.0, "2": 4.0, "3": 5.0, "4": 6.0, "5": 8.0, "6": 20.0},
+    "dragon of time": {"1": 2.0, "2": 6.0, "3": 3.0, "4": 6.0, "5": 8.0},
+    "legion revenant": {"1": 1.5, "2": 6.0, "3": 6.0, "4": 6.0, "5": 12.0},
+    "lightcaster": {"1": 2.0, "2": 4.0, "3": 4.0, "4": 12.0, "5": 15.0},
+    "lord of order": {"1": 2.0, "2": 4.0, "3": 5.0, "4": 6.0},
+    "scarlet sorceress": {"1": 2.0, "2": 4.0, "3": 4.0, "4": 5.0, "5": 6.0},
+    "void highlord": {"1": 2.3, "2": 4.0, "3": 5.0, "4": 4.0, "5": 15.0},
+    # Chrono ShadowHunter (same as Chrono ShadowSlayer): 2=Reload 6s, 4=FMJ 1.5s, 5=Silver Bullet 6s
+    "chrono shadowhunter": {"2": 6.0, "4": 1.5, "5": 6.0},
 }
+
+# TCM skill cooldowns (seconds) - from AQW wiki
+# Skill 1: Corrupted Sand Strike (2s) — auto attack
+# Skill 2: Sand Rift (2.5s) — deals dmg, applies Temporal Rift (stacks 4x, 30s) used by other skills
+# Skill 3: Hourglass Inversion (8s) — heal self, consumes Temporal Rift stacks
+#   + Hourglass of Power: grants Power (+10% all stats) for 30s
+#   + Infinite Corruption: grants Hourglass Heal (HoT) for 20s
+# Skill 4: Corruption Through Time (6s) — +20% damage for 10s (doesn't stack)
+#   + Entropic Corruption: Entropic Power (+100% dmg, 4s), Entropic Mana (+30% haste/-50% mana, 7s),
+#                          Entropic Harm (enemy +150% dmg taken, 10s), Focus (enemy attacks you, 3s)
+#   + Hourglass of Transience: 1st press = Transient (self DoT, 10s);
+#                              2nd press while Transient active = Ephemeral (+50% dodge/dmg, 5s)
+# Skill 5: Temporal Collapse (15s) — deals dmg based on recent dmg dealt, consumes Temporal Rift stacks
+TCM_COOLDOWNS = {"1": 2.0, "2": 2.5, "3": 8.0, "4": 6.0, "5": 15.0, "6": 20.0}
+
+
+def _min_delay_for_combo(combo: str, cooldowns: dict) -> float:
+    """
+    Compute minimum uniform delay (seconds) between keys so no skill is used before its cooldown.
+    For each key K at positions [i1, i2, ...], we need (gap in keys) * delay >= cooldown[K].
+    Returns delay with small buffer (1.02x) for input latency.
+    """
+    n = len(combo)
+    min_d = 0.0
+    for key in set(combo):
+        cd = cooldowns.get(key, 0)
+        if cd <= 0:
+            continue
+        positions = [i for i, c in enumerate(combo) if c == key]
+        for idx in range(len(positions)):
+            curr = positions[idx]
+            nxt = positions[(idx + 1) % len(positions)]
+            if idx + 1 < len(positions):
+                gap = nxt - curr  # keys between = delays between
+            else:
+                gap = n - curr + nxt  # wrap to next cycle
+            if gap <= 0:
+                continue
+            required = cd / gap
+            min_d = max(min_d, required)
+    return round(min_d * 1.02, 2)  # 2% buffer for input latency
+
+
+# Classes with multiple patterns: user can toggle between them in GUI
+# Each entry: (combo, delay, display_name) or (combo, delay, display_name, consumable_hint).
+# consumable_hint: text for slot 6 (class item) — shown for TCM.
+#
+# TCM class item combo resources:
+#   AQW Hub:  https://www.aqwhub.com/class-usage-guides/timeless-chronomancer/
+#   Power:    https://www.aqwhub.com/class-usage-guides/tcm-power/
+#   Transience: https://www.aqwhub.com/class-usage-guides/tcm-transience/
+#   Paradise: https://www.aqwhub.com/class-usage-guides/tcm-paradise/
+#   SLGMA:    https://docs.google.com/document/d/1pHEYDB5JM2qSBFYwVs6Hkj17x24TElB1mtuQUyidv18/edit
+#   AQW Wiki: https://aqwwiki.wikidot.com/timeless-chronomancer
+CLASS_PATTERNS = {
+    "dragon of time": [
+        ("23543", None, "DPS (2&4 cost 10% HP each)"),
+        ("2353", None, "Safe (no Burning Fates, no self-damage from 4)"),
+    ],
+    # TCM: 6 class items + Power+Entropic (pre-apply hourglass, swap to corruption). Key 6 (20s CD) = consumable thread.
+    "timeless chronomancer": [
+        ("34222425", None, "Hourglass of Power", "Hourglass of Power"),
+        ("42242253", None, "Hourglass of Transience", "Hourglass of Transience"),
+        ("42224253", None, "Hourglass of Paradise", "Hourglass of Paradise"),
+        ("634222425", None, "Entropic Corruption", "Entropic Corruption"),
+        ("634222425", None, "Power + Entropic (pre-apply Power, equip Entropic)", "Pre-apply Hourglass of Power (3), then equip Entropic Corruption"),
+        ("142224253", None, "Infinite Corruption", "Infinite Corruption"),
+        ("642434223422342262422253", None, "Foresee Corruption", "Foresee Corruption"),
+    ],
+}
+
 
 running = True
 is_paused = False
@@ -191,47 +283,56 @@ def _press_key_to_app(char: str, pid: int, use_psn: bool = False):
             pass
 
 
+_key_lock = threading.Lock()
+_KEY_MIN_INTERVAL = 0.08  # Min seconds between keys so game registers each (avoids drop after consumable 6)
+
+
+def _sleep(seconds: float):
+    """Sleep in small chunks so the loop exits quickly when running is cleared."""
+    end = time.time() + seconds
+    while running:
+        remaining = end - time.time()
+        if remaining <= 0:
+            break
+        time.sleep(min(0.05, remaining))
+
+
 def _press_key(char: str):
     """Press a key using pynput, or send to target app if --app is set (macOS)."""
     global target_pid, target_pids
-    pid_to_use = target_pids[0] if target_pids else target_pid
-    if char == "escape":
-        if pid_to_use:
-            _press_key_to_app("escape", pid_to_use, use_psn_backend)
+    with _key_lock:
+        pid_to_use = target_pids[0] if target_pids else target_pid
+        if pid_to_use and char in MAC_KEY_CODES:
+            _press_key_to_app(char, pid_to_use, use_psn_backend)
         else:
-            keyboard_ctrl.press(Key.esc)
-            keyboard_ctrl.release(Key.esc)
-    elif pid_to_use and char in MAC_KEY_CODES:
-        _press_key_to_app(char, pid_to_use, use_psn_backend)
-    else:
-        keyboard_ctrl.press(char)
-        keyboard_ctrl.release(char)
+            ctrl = _get_keyboard_ctrl()
+            ctrl.press(char)
+            ctrl.release(char)
+        time.sleep(_KEY_MIN_INTERVAL)
 
 
-def run_ability_combo(combo: str, delay: float, escape_after_keys: frozenset | set | None = None):
-    """Loop: press 1 (target enemy first) + combo keys. escape_after_keys: press Escape after these (e.g. buff skills)."""
+def run_ability_combo(combo: str, delay: float):
+    """Loop: press 1 (target enemy first) + combo keys. delay: seconds between keys."""
     global running, is_paused
-    escape_after = escape_after_keys or frozenset()
     while running:
         if not is_paused:
             _press_key("1")
-            time.sleep(0.12)
+            _sleep(0.12)
             for key in combo:
+                if not running:
+                    break
                 _press_key(key)
-                if key in escape_after:
-                    time.sleep(0.04)
-                    _press_key("escape")
-                time.sleep(delay)
-        time.sleep(0.03)
+                _sleep(delay)
+        _sleep(0.03)
 
 
-def run_consumable(interval: float = 1.0):
+def run_consumable(interval: float = 6.0):
     """Press consumable key (6) periodically."""
     global running, is_paused
     while running:
         if not is_paused:
             _press_key("6")
-        time.sleep(interval)
+        _sleep(interval)
 
 
 def run_accept_drop(x: int, y: int, interval: float = 0.5):
@@ -241,7 +342,7 @@ def run_accept_drop(x: int, y: int, interval: float = 0.5):
         if not is_paused:
             pyautogui.moveTo(x, y, duration=0)
             pyautogui.click()
-        time.sleep(interval)
+        _sleep(interval)
 
 
 def run_quest_turnin(quest_x: int, quest_y: int, turnin_x: int, turnin_y: int,
@@ -253,14 +354,17 @@ def run_quest_turnin(quest_x: int, quest_y: int, turnin_x: int, turnin_y: int,
         if not is_paused:
             pyautogui.moveTo(quest_x, quest_y, duration=0)
             pyautogui.click()
-            time.sleep(0.4)
+            _sleep(0.4)
+            if not running:
+                break
             pyautogui.moveTo(turnin_x, turnin_y, duration=0)
             pyautogui.click()
-            if has_accept:
-                time.sleep(0.25)
-                pyautogui.moveTo(accept_x, accept_y, duration=0)
-                pyautogui.click()
-        time.sleep(0.05)
+            if has_accept and running:
+                _sleep(0.25)
+                if running:
+                    pyautogui.moveTo(accept_x, accept_y, duration=0)
+                    pyautogui.click()
+        _sleep(0.05)
 
 
 def run_stdin_fallback():
@@ -290,20 +394,37 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     accept_drop_pos = config.get("accept_drop_pos")
     no_consumable = config.get("no_consumable", False)
     no_background = config.get("no_background", False)
-    escape_self_target = config.get("escape_self_target", False)
-    escape_after_key = config.get("escape_after_key")  # For custom: "3", "4", "5" or None
+    pattern_index = config.get("pattern_index")
 
-    # Resolve combo, delay, escape_after_keys
-    escape_after_keys = None
+    # Resolve combo and delay
     if class_name and class_name in CLASSES:
-        preset = CLASSES[class_name]
-        combo, delay = preset[0], preset[1]
-        if escape_self_target and class_name in ESCAPE_AFTER_KEYS:
-            escape_after_keys = frozenset(ESCAPE_AFTER_KEYS[class_name])
+        # Use selected pattern if class has multiple patterns
+        if class_name in CLASS_PATTERNS and pattern_index is not None:
+            patterns = CLASS_PATTERNS[class_name]
+            idx = min(pattern_index, len(patterns) - 1)
+            combo, delay_val = patterns[idx][0], patterns[idx][1]
+            if delay_val is None:
+                cooldowns = TCM_COOLDOWNS if class_name == "timeless chronomancer" else CLASS_COOLDOWNS.get(class_name, {})
+                delay = _min_delay_for_combo(combo, cooldowns) if cooldowns else config.get("delay", 1.0)
+            else:
+                delay = delay_val
+        else:
+            preset = CLASSES[class_name]
+            combo, delay_val = preset[0], preset[1]
+            if delay_val is None:
+                cooldowns = CLASS_COOLDOWNS.get(class_name, {})
+                delay = _min_delay_for_combo(combo, cooldowns) if cooldowns else config.get("delay", 1.0)
+            else:
+                delay = delay_val
     else:
         combo = attack if attack and all(c in "123456" for c in attack) else "412344"
-        if escape_self_target and escape_after_key and escape_after_key in "345":
-            escape_after_keys = frozenset(escape_after_key)
+
+    # If combo already includes key 6, suppress the consumable thread to avoid double-pressing
+    if "6" in combo:
+        no_consumable = True
+
+    # Consumable interval: TCM hourglass 20s; others use 6s minimum (AQW consumable cooldown)
+    consumable_interval = TCM_COOLDOWNS.get("6", 6.0) if class_name == "timeless chronomancer" else 6.0
 
     # Target app (macOS)
     target_pid = None
@@ -320,18 +441,24 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
             target_pids = [target_pid] + renderers if renderers else [target_pid]
 
     _log("\n--- Running ---")
-    _log(f"  Combo: {combo}  Delay: {delay}s")
-    _log(f"  Escape after self-target: {'Yes' if escape_after_keys else 'No'}")
+    pattern_name = ""
+    if class_name in CLASS_PATTERNS and pattern_index is not None:
+        patterns = CLASS_PATTERNS[class_name]
+        idx = min(pattern_index, len(patterns) - 1)
+        pattern_name = f"  Pattern: {patterns[idx][2]}\n"
+    delay_str = f"{delay}s"
+    _log(f"{pattern_name}  Combo: {combo}  Delay: {delay_str}")
+    _log(f"  Consumable (key 6): {'Off (6 in combo)' if no_consumable and '6' in combo else 'Off' if no_consumable else f'On (every {consumable_interval:.0f}s)'}")
     _log(f"  Target app: {target_app_name or 'focused window'}")
     _log(f"  Quest turn-in: {'Yes' if quest_pos else 'No'}")
     _log(f"  Accept drop: {'Yes' if accept_drop_pos else 'No'}")
     running = True
     threads = [
-        threading.Thread(target=run_ability_combo, args=(combo, delay), kwargs={"escape_after_keys": escape_after_keys}, daemon=True),
+        threading.Thread(target=run_ability_combo, args=(combo, delay), daemon=True),
         threading.Thread(target=run_stdin_fallback, daemon=True),
     ]
     if not no_consumable:
-        threads.append(threading.Thread(target=run_consumable, daemon=True))
+        threads.append(threading.Thread(target=run_consumable, args=(consumable_interval,), daemon=True))
     if quest_pos and len(quest_pos) >= 4:
         args = tuple(quest_pos[:6]) if len(quest_pos) >= 6 else tuple(quest_pos[:4])
         threads.append(threading.Thread(target=run_quest_turnin, args=args, daemon=True))
@@ -447,21 +574,16 @@ Examples:
         help="Keys go to focused window instead of auto-targeting app.",
     )
     ap.add_argument(
-        "--escape-self-target",
-        action="store_true",
-        help="Press Escape after self-target skills (archmage, legion revenant, archpaladin).",
-    )
-    ap.add_argument(
-        "--escape-after-key",
-        type=str,
-        choices=["3", "4", "5"],
-        metavar="KEY",
-        help="For custom attack: escape after this key (use with --escape-self-target).",
-    )
-    ap.add_argument(
         "--no-psn",
         action="store_true",
         help="Use postToPid instead of PSN (default is PSN for Artix).",
+    )
+    ap.add_argument(
+        "--pattern",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Pattern index for classes with multiple (e.g. dragon of time: 0=DPS, 1=Safe).",
     )
 
     # list
@@ -472,9 +594,10 @@ Examples:
     if args.command == "list":
         print("\nClasses:\n")
         for name, preset in CLASSES.items():
-            combo, delay = preset[0], preset[1]
-            extra = f"  (use --escape-self-target)" if name in ESCAPE_AFTER_KEYS else ""
-            print(f"  {name:15} combo={combo}  delay={delay}s{extra}")
+            combo, delay_val = preset[0], preset[1]
+            delay_str = f"{delay_val}s" if delay_val is not None else "auto"
+            patterns_note = f"  ({len(CLASS_PATTERNS[name])} patterns)" if name in CLASS_PATTERNS else ""
+            print(f"  {name:20} combo={combo:15} delay={delay_str}{patterns_note}")
         print("\nUse: python aqw_auto.py ability --class <name>")
         print("Or:  python aqw_auto.py ability --attack 412344")
         return
@@ -483,23 +606,27 @@ Examples:
         parser.print_help()
         return
 
-    # Resolve combo, delay, and escape_after_keys
-    escape_after_keys = None
+    # Resolve combo and delay
     if getattr(args, "class_name", None):
-        preset = CLASSES[args.class_name]
-        combo, delay = preset[0], preset[1]
+        class_name = args.class_name
+        pattern_index = getattr(args, "pattern", 0)
+        if class_name in CLASS_PATTERNS and pattern_index < len(CLASS_PATTERNS[class_name]):
+            combo, delay_val = CLASS_PATTERNS[class_name][pattern_index][0], CLASS_PATTERNS[class_name][pattern_index][1]
+        else:
+            preset = CLASSES[class_name]
+            combo, delay_val = preset[0], preset[1]
         if args.delay is not None:
             delay = args.delay
-        if getattr(args, "escape_self_target", False) and args.class_name in ESCAPE_AFTER_KEYS:
-            escape_after_keys = frozenset(ESCAPE_AFTER_KEYS[args.class_name])
-        esc_note = " (Escape after self-target)" if escape_after_keys else ""
-        print(f"Using class '{args.class_name}': {combo} @ {delay}s{esc_note}")
+        elif delay_val is None:
+            cooldowns = TCM_COOLDOWNS if class_name == "timeless chronomancer" else CLASS_COOLDOWNS.get(class_name, {})
+            delay = _min_delay_for_combo(combo, cooldowns) if cooldowns else 1.0
+        else:
+            delay = delay_val
+        print(f"Using class '{class_name}': {combo} @ {delay}s")
     elif args.attack:
         combo = args.attack
         delay = args.delay if args.delay is not None else 1.0
-        if getattr(args, "escape_self_target", False) and getattr(args, "escape_after_key", None):
-            escape_after_keys = frozenset(args.escape_after_key)
-        print(f"Using attack pattern: {combo} @ {delay}s" + (" (Escape after self-target)" if escape_after_keys else ""))
+        print(f"Using attack pattern: {combo} @ {delay}s")
     else:
         print("Error: provide --class or --attack")
         ap.print_help()
@@ -588,12 +715,19 @@ Examples:
             print("\nStarting in 3 seconds... Switch to AQW window!")
             time.sleep(3)
 
+    # If combo includes key 6, suppress the consumable thread to avoid double-pressing
+    if "6" in combo:
+        args.no_consumable = True
+
+    consumable_interval = TCM_COOLDOWNS.get("6", 6.0) if getattr(args, "class_name", None) == "timeless chronomancer" else 6.0
+
     print("\n--- Running ---")
     print(f"  Combo: {combo}  Delay: {delay}s")
     if not (target_pid or target_pids):
         print(f"  Target: focused window (click AQW game first!)")
     else:
         print(f"  Target app: {target_app_name or args.app or 'background'}")
+    print(f"  Consumable (key 6): {'Off' if args.no_consumable else f'On (every {consumable_interval:.0f}s)'}")
     print(f"  Quest turn-in: {'Yes' if quest_pos else 'No'}")
     print(f"  Accept drop: {'Yes' if accept_drop_pos else 'No'}")
     print("  (Press Enter in terminal to stop)")
@@ -603,12 +737,12 @@ Examples:
     running = True
 
     threads = [
-        threading.Thread(target=run_ability_combo, args=(combo, delay), kwargs={"escape_after_keys": escape_after_keys}, daemon=True),
+        threading.Thread(target=run_ability_combo, args=(combo, delay), daemon=True),
         threading.Thread(target=run_stdin_fallback, daemon=True),
     ]
 
     if not args.no_consumable:
-        threads.append(threading.Thread(target=run_consumable, daemon=True))
+        threads.append(threading.Thread(target=run_consumable, args=(consumable_interval,), daemon=True))
     if quest_pos and len(quest_pos) >= 4:
         qargs = tuple(quest_pos[:6]) if len(quest_pos) >= 6 else tuple(quest_pos[:4])
         threads.append(threading.Thread(target=run_quest_turnin, args=qargs, daemon=True))

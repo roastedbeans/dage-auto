@@ -55,3 +55,14 @@ python aqw_auto.py list
 ```
 
 **Hotkeys:** Ctrl+Q exit, Ctrl+Shift+Q pause, Ctrl+Space resume
+
+## TCM class item combo resources
+
+Timeless Chronomancer patterns are based on these guides:
+
+- [AQW Hub – Timeless Chronomancer](https://www.aqwhub.com/class-usage-guides/timeless-chronomancer/)
+- [AQW Hub – Power](https://www.aqwhub.com/class-usage-guides/tcm-power/)
+- [AQW Hub – Transience](https://www.aqwhub.com/class-usage-guides/tcm-transience/)
+- [AQW Hub – Paradise](https://www.aqwhub.com/class-usage-guides/tcm-paradise/)
+- [SLGMA guide (Google Doc)](https://docs.google.com/document/d/1pHEYDB5JM2qSBFYwVs6Hkj17x24TElB1mtuQUyidv18/edit)
+- [AQW Wiki – Timeless Chronomancer](https://aqwwiki.wikidot.com/timeless-chronomancer)

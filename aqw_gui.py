@@ -24,7 +24,7 @@ def _icon_path():
         return str(png)
     return None
 import aqw_auto
-from aqw_auto import CLASSES, run_ability_from_gui
+from aqw_auto import CLASSES, CLASS_PATTERNS, CLASS_COOLDOWNS, TCM_COOLDOWNS, _min_delay_for_combo, run_ability_from_gui
 
 try:
     from PySide6.QtWidgets import (
@@ -49,7 +49,7 @@ log_queue = None
 log_lines = []
 
 
-def build_config(cls, attack, delay, quest, no_consumable, no_bg, escape_self_target, escape_after_key, quest_pos, accept_drop, accept_drop_pos):
+def build_config(cls, attack, delay, quest, no_consumable, no_bg, quest_pos, accept_drop, accept_drop_pos, pattern_index=None):
     """Build config dict for run_ability_from_gui."""
     if cls and cls != "Custom":
         class_name, attack = cls, ""
@@ -68,8 +68,7 @@ def build_config(cls, attack, delay, quest, no_consumable, no_bg, escape_self_ta
         "accept_drop_pos": accept_drop_pos if (accept_drop and accept_drop_pos and len(accept_drop_pos) == 2) else None,
         "no_consumable": no_consumable,
         "no_background": no_bg,
-        "escape_self_target": escape_self_target,
-        "escape_after_key": escape_after_key,
+        "pattern_index": pattern_index,
     }
 
 
@@ -107,6 +106,24 @@ class MainPage(QWidget):
         self.class_combo.currentTextChanged.connect(self._on_class_change)
         layout.addWidget(self.class_combo)
 
+        # Pattern (for classes with multiple patterns, e.g. Timeless Chronomancer)
+        pattern_container = QWidget()
+        pattern_layout = QVBoxLayout(pattern_container)
+        pattern_layout.setContentsMargins(0, 0, 0, 0)
+        pattern_row = QHBoxLayout()
+        pattern_row.addWidget(QLabel("Pattern"))
+        self.pattern_combo = QComboBox()
+        self.pattern_combo.setToolTip("Select combo pattern (Timeless Chronomancer only)")
+        self.pattern_combo.currentIndexChanged.connect(self._on_pattern_change)
+        pattern_row.addWidget(self.pattern_combo)
+        pattern_layout.addLayout(pattern_row)
+        self.consumable_hint = QLabel("")
+        self.consumable_hint.setStyleSheet("color: gray; font-size: 11px;")
+        self.consumable_hint.setWordWrap(True)
+        pattern_layout.addWidget(self.consumable_hint)
+        layout.addWidget(pattern_container)
+        self.pattern_container = pattern_container
+
         # Custom attack
         attack_row = QHBoxLayout()
         attack_row.addWidget(QLabel("Attack"))
@@ -124,6 +141,12 @@ class MainPage(QWidget):
         self.delay_spin.setValue(1.0)
         delay_row.addWidget(self.delay_spin)
         layout.addLayout(delay_row)
+
+        # Active combo display
+        self.combo_display = QLabel("")
+        self.combo_display.setStyleSheet("color: #0d7377; font-size: 12px; font-family: monospace; font-weight: 500;")
+        self.combo_display.setWordWrap(True)
+        layout.addWidget(self.combo_display)
 
         # Options
         opts = QGroupBox("Options")
@@ -148,20 +171,8 @@ class MainPage(QWidget):
         opts_layout.addWidget(self.accept_drop_status)
         self.no_consumable_cb = QCheckBox("No consumable (key 6)")
         self.no_bg_cb = QCheckBox("Foreground mode")
-        self.escape_self_target_cb = QCheckBox("Escape after self-target skills")
-        self.escape_self_target_cb.setToolTip("Press Escape after buff/heal skills that target self (archmage, legion revenant, archpaladin)")
         opts_layout.addWidget(self.no_consumable_cb)
         opts_layout.addWidget(self.no_bg_cb)
-        opts_layout.addWidget(self.escape_self_target_cb)
-        escape_hint = QLabel("(Self-target can be disabled in game: Advanced Options)")
-        escape_hint.setStyleSheet("color: gray; font-size: 11px;")
-        opts_layout.addWidget(escape_hint)
-        escape_key_row = QHBoxLayout()
-        escape_key_row.addWidget(QLabel("Escape after key (Custom):"))
-        self.escape_after_combo = QComboBox()
-        self.escape_after_combo.addItems(["None", "3", "4", "5"])
-        escape_key_row.addWidget(self.escape_after_combo)
-        opts_layout.addLayout(escape_key_row)
         layout.addWidget(opts)
 
         # Buttons
@@ -184,15 +195,90 @@ class MainPage(QWidget):
         layout.addWidget(self.log)
 
         self.attack_edit.setVisible(False)
+        self.pattern_container.setVisible(False)
+        self.attack_edit.textChanged.connect(self._update_combo_display)
         self._on_class_change()
 
+    def _update_combo_display(self):
+        cls = self.class_combo.currentText()
+        if cls == "Custom":
+            combo = self.attack_edit.text().strip()
+            if combo and all(c in "123456" for c in combo):
+                delay = self.delay_spin.value()
+                self.combo_display.setText(f"Combo: {combo}  Delay: {delay}s")
+            else:
+                self.combo_display.setText("")
+            return
+        if cls in CLASS_PATTERNS:
+            idx = self.pattern_combo.currentIndex()
+            patterns = CLASS_PATTERNS[cls]
+            if 0 <= idx < len(patterns):
+                combo, delay_val = patterns[idx][0], patterns[idx][1]
+                cooldowns = TCM_COOLDOWNS if cls == "timeless chronomancer" else CLASS_COOLDOWNS.get(cls, {})
+                delay = delay_val if delay_val is not None else (_min_delay_for_combo(combo, cooldowns) if cooldowns else self.delay_spin.value())
+                self.combo_display.setText(f"Combo: {combo}  Delay: {delay}s")
+            else:
+                self.combo_display.setText("")
+        else:
+            preset = CLASSES.get(cls)
+            if preset:
+                combo, delay_val = preset[0], preset[1]
+                cooldowns = CLASS_COOLDOWNS.get(cls, {})
+                delay = delay_val if delay_val is not None else (_min_delay_for_combo(combo, cooldowns) if cooldowns else self.delay_spin.value())
+                self.combo_display.setText(f"Combo: {combo}  Delay: {delay}s")
+            else:
+                self.combo_display.setText("")
+
     def _on_class_change(self):
-        is_custom = self.class_combo.currentText() == "Custom"
+        cls = self.class_combo.currentText()
+        is_custom = cls == "Custom"
         self.attack_edit.setVisible(is_custom)
-        self.escape_after_combo.setEnabled(is_custom)
+
+        # Show pattern selector only for classes with multiple patterns
+        has_patterns = cls in CLASS_PATTERNS
+        self.pattern_container.setVisible(has_patterns)
+        if has_patterns:
+            self.pattern_combo.clear()
+            self.pattern_combo.blockSignals(True)
+            for p in CLASS_PATTERNS[cls]:
+                name = p[2]
+                self.pattern_combo.addItem(name)
+            self.pattern_combo.blockSignals(False)
+            self.pattern_combo.setCurrentIndex(0)
+            self._on_pattern_change()
+
         if not is_custom:
-            preset = CLASSES.get(self.class_combo.currentText(), ("2345", 1.0))
-            self.delay_spin.setValue(preset[1])
+            preset = CLASSES.get(cls, ("2345", 1.0))
+            delay_val = preset[1]
+            self.delay_spin.setValue(delay_val if delay_val is not None else 1.0)
+            if cls in CLASS_PATTERNS or (delay_val is None and cls in CLASS_COOLDOWNS):
+                self.delay_spin.setToolTip("Auto-computed from skill cooldowns")
+            else:
+                self.delay_spin.setToolTip("")
+        self._update_combo_display()
+
+    def _on_pattern_change(self):
+        cls = self.class_combo.currentText()
+        if cls not in CLASS_PATTERNS:
+            self.consumable_hint.setText("")
+            self.consumable_hint.setVisible(False)
+            return
+        idx = self.pattern_combo.currentIndex()
+        patterns = CLASS_PATTERNS[cls]
+        if 0 <= idx < len(patterns):
+            p = patterns[idx]
+            combo = p[0]
+            consumable = p[3] if len(p) > 3 else ""
+            if consumable:
+                self.consumable_hint.setText(f"Equip (slot 6): {consumable}\nCombo: {combo}")
+                self.consumable_hint.setVisible(True)
+            else:
+                self.consumable_hint.setText(f"Combo: {combo}")
+                self.consumable_hint.setVisible(True)
+        else:
+            self.consumable_hint.setText("")
+            self.consumable_hint.setVisible(False)
+        self._update_combo_display()
 
     def _record_quest(self):
         if not pyautogui:
@@ -260,12 +346,14 @@ class MainPage(QWidget):
         if self.accept_drop_cb.isChecked() and not self.accept_drop_pos:
             QMessageBox.critical(self, "Error", "Record accept drop position first")
             return
-        escape_after = None if self.escape_after_combo.currentText() == "None" else self.escape_after_combo.currentText()
+        pattern_index = None
+        if cls in CLASS_PATTERNS:
+            pattern_index = self.pattern_combo.currentIndex()
         config = build_config(cls, attack, delay,
                              self.quest_cb.isChecked(), self.no_consumable_cb.isChecked(),
-                             self.no_bg_cb.isChecked(), self.escape_self_target_cb.isChecked(),
-                             escape_after, self.quest_pos,
-                             self.accept_drop_cb.isChecked(), self.accept_drop_pos)
+                             self.no_bg_cb.isChecked(), self.quest_pos,
+                             self.accept_drop_cb.isChecked(), self.accept_drop_pos,
+                             pattern_index)
         if config is None:
             QMessageBox.critical(self, "Error", "Invalid attack pattern")
             return
@@ -289,17 +377,20 @@ class MainPage(QWidget):
         if ability_thread and ability_thread.is_alive():
             QTimer.singleShot(100, self._poll_log)
         else:
-            ability_thread = None
-            self.start_btn.setEnabled(True)
-            self.stop_btn.setEnabled(False)
-            self.log.append("Stopped.")
+            if ability_thread is not None:
+                # Thread finished on its own (not stopped by user)
+                ability_thread = None
+                self.start_btn.setEnabled(True)
+                self.stop_btn.setEnabled(False)
+                self.log.append("Stopped.")
 
     def _stop(self):
         global ability_thread
         aqw_auto.running = False
-        if ability_thread and ability_thread.is_alive():
-            ability_thread.join(timeout=2)
         ability_thread = None
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.log.append("Stopped.")
 
 
 class MainWindow(QMainWindow):
