@@ -65,6 +65,8 @@ CLASSES = {
     "void highlord": ("2345234234", None),  # 2&4 cost 20% HP; 3 has lifesteal heal
     "timeless chronomancer": ("42224253", None),  # Delay auto-computed when pattern selected
     "chrono shadowhunter": ("24444445", None),  # 2=Reload, 4=FMJ bullets, 5=Silver Bullet nuke
+    "chaos avenger": ("3542", None),  # 3=Flux (debuff), 5=Fury Unleashed (burst), 4=Chaos Bulwark (defense), 2=Chaos Siphon (lifesteal)
+    "yami no ronin": ("3225225", None),  # Default: Dodge combo. Use pattern selector for others.
 }
 
 # Skill cooldowns (seconds) - from AQW wiki. Used to compute min delay.
@@ -76,11 +78,16 @@ CLASS_COOLDOWNS = {
     "dragon of time": {"1": 2.0, "2": 6.0, "3": 3.0, "4": 6.0, "5": 8.0},
     "legion revenant": {"1": 1.5, "2": 6.0, "3": 6.0, "4": 6.0, "5": 12.0},
     "lightcaster": {"1": 2.0, "2": 4.0, "3": 4.0, "4": 12.0, "5": 15.0},
-    "lord of order": {"1": 2.0, "2": 4.0, "3": 5.0, "4": 6.0},
+    "lord of order": {"1": 2.0, "2": 4.0, "3": 5.0, "4": 6.0, "5": 8.0},
     "scarlet sorceress": {"1": 2.0, "2": 4.0, "3": 4.0, "4": 5.0, "5": 6.0},
     "void highlord": {"1": 2.3, "2": 4.0, "3": 5.0, "4": 4.0, "5": 15.0},
     # Chrono ShadowHunter (same as Chrono ShadowSlayer): 2=Reload 6s, 4=FMJ 1.5s, 5=Silver Bullet 6s
     "chrono shadowhunter": {"2": 6.0, "4": 1.5, "5": 6.0},
+    # Chaos Avenger: 5=Fury Unleashed (35s) excluded — delay computed from 2,3,4 only (~3.83s).
+    # Skill 5 fires opportunistically; AQW ignores presses while on cooldown.
+    "chaos avenger": {"2": 6.0, "3": 15.0, "4": 6.0},
+    # Yami no Ronin: 1=Batto 2s, 2=Tachi 3s, 3=Yami no Maku 14s, 4=Kettou 3s, 5=Jigen Kogeki 6s
+    "yami no ronin": {"1": 2.0, "2": 3.0, "3": 14.0, "4": 3.0, "5": 6.0},
 }
 
 # TCM skill cooldowns (seconds) - from AQW wiki
@@ -150,6 +157,11 @@ CLASS_PATTERNS = {
         ("634222425", None, "Power + Entropic (pre-apply Power, equip Entropic)", "Pre-apply Hourglass of Power (3), then equip Entropic Corruption"),
         ("142224253", None, "Infinite Corruption", "Infinite Corruption"),
         ("642434223422342262422253", None, "Foresee Corruption", "Foresee Corruption"),
+    ],
+    "yami no ronin": [
+        ("3225225", None, "Dodge"),
+        ("4344242425", None, "Full offence"),
+        ("222345", None, "Stack Tachi"),
     ],
 }
 
@@ -311,14 +323,57 @@ def _press_key(char: str):
         time.sleep(_KEY_MIN_INTERVAL)
 
 
-def run_ability_combo(combo: str, delay: float):
-    """Loop: press 1 (target enemy first) + combo keys. delay: seconds between keys."""
-    global running, is_paused
+# Classes that use a different targeting skill (e.g. Reload) — do not prepend auto (1)
+CLASSES_NO_AUTO_PREPEND = frozenset({"chrono shadowhunter"})
+
+# Live config for mid-fight combo switching (GUI only). When set, run_ability_combo reads from this each cycle.
+LIVE_CONFIG: dict | None = None
+
+
+def resolve_combo_delay(class_name: str, pattern_index: int | None, attack: str, base_delay: float) -> tuple[str, float]:
+    """Resolve combo and delay from class/pattern. Returns (combo, delay). Used by GUI for live switching."""
+    if class_name and class_name in CLASSES:
+        if class_name in CLASS_PATTERNS and pattern_index is not None:
+            patterns = CLASS_PATTERNS[class_name]
+            idx = min(pattern_index, len(patterns) - 1)
+            combo, delay_val = patterns[idx][0], patterns[idx][1]
+            if delay_val is None:
+                cooldowns = TCM_COOLDOWNS if class_name == "timeless chronomancer" else CLASS_COOLDOWNS.get(class_name, {})
+                delay = _min_delay_for_combo(combo, cooldowns) if cooldowns else base_delay
+            else:
+                delay = delay_val
+        else:
+            preset = CLASSES[class_name]
+            combo, delay_val = preset[0], preset[1]
+            if delay_val is None:
+                cooldowns = CLASS_COOLDOWNS.get(class_name, {})
+                delay = _min_delay_for_combo(combo, cooldowns) if cooldowns else base_delay
+            else:
+                delay = delay_val
+    else:
+        combo = attack if attack and all(c in "123456" for c in attack) else "412344"
+        delay = base_delay
+    return (combo, delay)
+
+
+def _combo_with_auto(combo: str, class_name: str | None = None) -> str:
+    """Prepend auto (1) for targeting when combo doesn't start with it. Skip for classes like Chrono ShadowHunter (uses Reload)."""
+    if class_name and class_name in CLASSES_NO_AUTO_PREPEND:
+        return combo
+    return ("1" + combo) if combo and combo[0] != "1" else combo
+
+
+def run_ability_combo(combo: str, delay: float, class_name: str | None = None, use_live_config: bool = False):
+    """Loop: auto (1) to target + combo keys. When use_live_config, reads combo/delay from LIVE_CONFIG each cycle (mid-fight switch)."""
+    global running, is_paused, LIVE_CONFIG
     while running:
+        if use_live_config and LIVE_CONFIG:
+            combo = LIVE_CONFIG.get("combo", combo)
+            delay = LIVE_CONFIG.get("delay", delay)
+            class_name = LIVE_CONFIG.get("class_name", class_name)
+        keys = _combo_with_auto(combo, class_name)
         if not is_paused:
-            _press_key("1")
-            _sleep(0.12)
-            for key in combo:
+            for key in keys:
                 if not running:
                     break
                 _press_key(key)
@@ -381,13 +436,14 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     """
     Run ability combo in-process (from GUI). Avoids spawning a second app in the Dock.
     config: class_name, attack, delay, quest_turnin, quest_pos, no_consumable, no_background
+    Supports mid-fight combo switching via LIVE_CONFIG when class/pattern changes.
     """
-    global running, is_paused, target_pid, target_pids, target_app_name, use_psn_backend
+    global running, is_paused, target_pid, target_pids, target_app_name, use_psn_backend, LIVE_CONFIG
     globals()["_log_queue"] = log_queue
 
     class_name = config.get("class_name") or ""
     attack = config.get("attack", "")
-    delay = config.get("delay", 1.0)
+    base_delay = config.get("delay", 1.0)
     quest_turnin = config.get("quest_turnin", False)
     quest_pos = config.get("quest_pos")
     accept_drop = config.get("accept_drop", False)
@@ -396,28 +452,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     no_background = config.get("no_background", False)
     pattern_index = config.get("pattern_index")
 
-    # Resolve combo and delay
-    if class_name and class_name in CLASSES:
-        # Use selected pattern if class has multiple patterns
-        if class_name in CLASS_PATTERNS and pattern_index is not None:
-            patterns = CLASS_PATTERNS[class_name]
-            idx = min(pattern_index, len(patterns) - 1)
-            combo, delay_val = patterns[idx][0], patterns[idx][1]
-            if delay_val is None:
-                cooldowns = TCM_COOLDOWNS if class_name == "timeless chronomancer" else CLASS_COOLDOWNS.get(class_name, {})
-                delay = _min_delay_for_combo(combo, cooldowns) if cooldowns else config.get("delay", 1.0)
-            else:
-                delay = delay_val
-        else:
-            preset = CLASSES[class_name]
-            combo, delay_val = preset[0], preset[1]
-            if delay_val is None:
-                cooldowns = CLASS_COOLDOWNS.get(class_name, {})
-                delay = _min_delay_for_combo(combo, cooldowns) if cooldowns else config.get("delay", 1.0)
-            else:
-                delay = delay_val
-    else:
-        combo = attack if attack and all(c in "123456" for c in attack) else "412344"
+    combo, delay = resolve_combo_delay(class_name, pattern_index, attack, base_delay)
 
     # If combo already includes key 6, suppress the consumable thread to avoid double-pressing
     if "6" in combo:
@@ -447,14 +482,15 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
         idx = min(pattern_index, len(patterns) - 1)
         pattern_name = f"  Pattern: {patterns[idx][2]}\n"
     delay_str = f"{delay}s"
-    _log(f"{pattern_name}  Combo: {combo}  Delay: {delay_str}")
+    _log(f"{pattern_name}  Combo: {_combo_with_auto(combo, class_name)}  Delay: {delay_str}")
     _log(f"  Consumable (key 6): {'Off (6 in combo)' if no_consumable and '6' in combo else 'Off' if no_consumable else f'On (every {consumable_interval:.0f}s)'}")
     _log(f"  Target app: {target_app_name or 'focused window'}")
     _log(f"  Quest turn-in: {'Yes' if quest_pos else 'No'}")
     _log(f"  Accept drop: {'Yes' if accept_drop_pos else 'No'}")
     running = True
+    LIVE_CONFIG = {"combo": combo, "delay": delay, "class_name": class_name}
     threads = [
-        threading.Thread(target=run_ability_combo, args=(combo, delay), daemon=True),
+        threading.Thread(target=run_ability_combo, args=(combo, delay, class_name, True), daemon=True),
         threading.Thread(target=run_stdin_fallback, daemon=True),
     ]
     if not no_consumable:
@@ -476,6 +512,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
 
     _log("Done.")
     globals()["_log_queue"] = None
+    LIVE_CONFIG = None
 
 
 def record_positions():
@@ -721,8 +758,9 @@ Examples:
 
     consumable_interval = TCM_COOLDOWNS.get("6", 6.0) if getattr(args, "class_name", None) == "timeless chronomancer" else 6.0
 
+    cli_class = getattr(args, "class_name", None)
     print("\n--- Running ---")
-    print(f"  Combo: {combo}  Delay: {delay}s")
+    print(f"  Combo: {_combo_with_auto(combo, cli_class)}  Delay: {delay}s")
     if not (target_pid or target_pids):
         print(f"  Target: focused window (click AQW game first!)")
     else:
@@ -737,7 +775,7 @@ Examples:
     running = True
 
     threads = [
-        threading.Thread(target=run_ability_combo, args=(combo, delay), daemon=True),
+        threading.Thread(target=run_ability_combo, args=(combo, delay, cli_class), daemon=True),
         threading.Thread(target=run_stdin_fallback, daemon=True),
     ]
 

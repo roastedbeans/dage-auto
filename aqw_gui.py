@@ -24,8 +24,10 @@ def _icon_path():
     if png.is_file():
         return str(png)
     return None
+
+
 import aqw_auto
-from aqw_auto import CLASSES, CLASS_PATTERNS, CLASS_COOLDOWNS, TCM_COOLDOWNS, _min_delay_for_combo, run_ability_from_gui
+from aqw_auto import CLASSES, CLASS_PATTERNS, CLASS_COOLDOWNS, TCM_COOLDOWNS, _combo_with_auto, _min_delay_for_combo, resolve_combo_delay, run_ability_from_gui
 
 try:
     import updater
@@ -121,7 +123,7 @@ class MainPage(QWidget):
         pattern_row = QHBoxLayout()
         pattern_row.addWidget(QLabel("Pattern"))
         self.pattern_combo = QComboBox()
-        self.pattern_combo.setToolTip("Select combo pattern (Timeless Chronomancer only)")
+        self.pattern_combo.setToolTip("Select combo pattern. Switch mid-fight to change combo without stopping.")
         self.pattern_combo.currentIndexChanged.connect(self._on_pattern_change)
         pattern_row.addWidget(self.pattern_combo)
         pattern_layout.addLayout(pattern_row)
@@ -207,13 +209,17 @@ class MainPage(QWidget):
         self.attack_edit.textChanged.connect(self._update_combo_display)
         self._on_class_change()
 
+    def _display_combo(self, combo: str, class_name: str | None = None) -> str:
+        """Include auto (1) for targeting when combo doesn't start with it. Skip for Chrono ShadowHunter."""
+        return _combo_with_auto(combo, class_name)
+
     def _update_combo_display(self):
         cls = self.class_combo.currentText()
         if cls == "Custom":
             combo = self.attack_edit.text().strip()
             if combo and all(c in "123456" for c in combo):
                 delay = self.delay_spin.value()
-                self.combo_display.setText(f"Combo: {combo}  Delay: {delay}s")
+                self.combo_display.setText(f"Combo: {self._display_combo(combo, None)}  Delay: {delay}s")
             else:
                 self.combo_display.setText("")
             return
@@ -224,7 +230,7 @@ class MainPage(QWidget):
                 combo, delay_val = patterns[idx][0], patterns[idx][1]
                 cooldowns = TCM_COOLDOWNS if cls == "timeless chronomancer" else CLASS_COOLDOWNS.get(cls, {})
                 delay = delay_val if delay_val is not None else (_min_delay_for_combo(combo, cooldowns) if cooldowns else self.delay_spin.value())
-                self.combo_display.setText(f"Combo: {combo}  Delay: {delay}s")
+                self.combo_display.setText(f"Combo: {self._display_combo(combo, cls)}  Delay: {delay}s")
             else:
                 self.combo_display.setText("")
         else:
@@ -233,9 +239,20 @@ class MainPage(QWidget):
                 combo, delay_val = preset[0], preset[1]
                 cooldowns = CLASS_COOLDOWNS.get(cls, {})
                 delay = delay_val if delay_val is not None else (_min_delay_for_combo(combo, cooldowns) if cooldowns else self.delay_spin.value())
-                self.combo_display.setText(f"Combo: {combo}  Delay: {delay}s")
+                self.combo_display.setText(f"Combo: {self._display_combo(combo, cls)}  Delay: {delay}s")
             else:
                 self.combo_display.setText("")
+
+    def _update_live_config_if_running(self):
+        """When running, update LIVE_CONFIG so combo switches mid-fight."""
+        global ability_thread
+        if ability_thread and ability_thread.is_alive():
+            cls = self.class_combo.currentText()
+            pattern_index = self.pattern_combo.currentIndex() if cls in CLASS_PATTERNS else None
+            attack = self.attack_edit.text().strip() if cls == "Custom" else ""
+            base_delay = self.delay_spin.value()
+            combo, delay = resolve_combo_delay(cls, pattern_index, attack, base_delay)
+            aqw_auto.LIVE_CONFIG = {"combo": combo, "delay": delay, "class_name": cls if cls != "Custom" else ""}
 
     def _on_class_change(self):
         cls = self.class_combo.currentText()
@@ -264,6 +281,7 @@ class MainPage(QWidget):
             else:
                 self.delay_spin.setToolTip("")
         self._update_combo_display()
+        self._update_live_config_if_running()
 
     def _on_pattern_change(self):
         cls = self.class_combo.currentText()
@@ -278,15 +296,16 @@ class MainPage(QWidget):
             combo = p[0]
             consumable = p[3] if len(p) > 3 else ""
             if consumable:
-                self.consumable_hint.setText(f"Equip (slot 6): {consumable}\nCombo: {combo}")
+                self.consumable_hint.setText(f"Equip (slot 6): {consumable}\nCombo: {self._display_combo(combo, cls)}")
                 self.consumable_hint.setVisible(True)
             else:
-                self.consumable_hint.setText(f"Combo: {combo}")
+                self.consumable_hint.setText(f"Combo: {self._display_combo(combo, cls)}")
                 self.consumable_hint.setVisible(True)
         else:
             self.consumable_hint.setText("")
             self.consumable_hint.setVisible(False)
         self._update_combo_display()
+        self._update_live_config_if_running()
 
     def _record_quest(self):
         if not pyautogui:
@@ -428,12 +447,14 @@ class MainWindow(QMainWindow):
         layout.addLayout(bottom_row)
 
         if _UPDATER_AVAILABLE:
+            self._manual_check = False
             updater.start_check(GITHUB_REPO, APP_VERSION)
             self._update_timer = QTimer(self)
             self._update_timer.timeout.connect(self._poll_update)
             self._update_timer.start(500)
 
     def _manual_update_check(self):
+        self._manual_check = True
         self._check_btn.setEnabled(False)
         self._check_btn.setText("Checking...")
         updater.start_check(GITHUB_REPO, APP_VERSION)
@@ -448,7 +469,7 @@ class MainWindow(QMainWindow):
             self._check_btn.setEnabled(True)
             self._check_btn.setText("Check for Updates")
         if not result.get("available"):
-            if hasattr(self, "_check_btn"):
+            if self._manual_check:
                 QMessageBox.information(self, "No Updates", "You are on the latest version.")
             return
         latest = result["version"]
