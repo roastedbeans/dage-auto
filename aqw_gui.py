@@ -7,6 +7,7 @@ import os
 import queue
 import sys
 import threading
+import webbrowser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -25,6 +26,13 @@ def _icon_path():
     return None
 import aqw_auto
 from aqw_auto import CLASSES, CLASS_PATTERNS, CLASS_COOLDOWNS, TCM_COOLDOWNS, _min_delay_for_combo, run_ability_from_gui
+
+try:
+    import updater
+    from version import APP_VERSION, GITHUB_REPO
+    _UPDATER_AVAILABLE = True
+except ImportError:
+    _UPDATER_AVAILABLE = False
 
 try:
     from PySide6.QtWidgets import (
@@ -405,6 +413,35 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         layout.addWidget(MainPage())
+
+        if _UPDATER_AVAILABLE:
+            updater.start_check(GITHUB_REPO, APP_VERSION)
+            self._update_timer = QTimer(self)
+            self._update_timer.timeout.connect(self._poll_update)
+            self._update_timer.start(500)
+
+    def _poll_update(self):
+        result = updater.poll()
+        if result is None:
+            return
+        self._update_timer.stop()
+        if not result.get("available"):
+            return
+        latest = result["version"]
+        url = result["url"]
+        box = QMessageBox(self)
+        box.setWindowTitle("Update Available")
+        box.setText(
+            f"A new version <b>{latest}</b> is available!<br>"
+            f"You are running <b>v{APP_VERSION}</b>.<br><br>"
+            f"Download the update from GitHub Releases."
+        )
+        box.setIcon(QMessageBox.Icon.Information)
+        download_btn = box.addButton("Download Update", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is download_btn:
+            webbrowser.open(url)
 
 
 def main():

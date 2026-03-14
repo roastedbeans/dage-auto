@@ -41,6 +41,8 @@ else
   ICON_PLIST=""
 fi
 
+APP_VERSION=$(python3 -c "from version import APP_VERSION; print(APP_VERSION)" 2>/dev/null || echo "0.0.0")
+
 cat > "$APP/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -48,6 +50,8 @@ cat > "$APP/Contents/Info.plist" << EOF
 <key>CFBundleExecutable</key><string>Dage Auto</string>
 <key>CFBundleIdentifier</key><string>com.dage.auto</string>
 <key>CFBundleName</key><string>Dage Auto</string>
+<key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
+<key>CFBundleVersion</key><string>$APP_VERSION</string>
 <key>LSMinimumSystemVersion</key><string>10.13</string>
 $ICON_PLIST
 </dict></plist>

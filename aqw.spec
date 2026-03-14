@@ -6,9 +6,13 @@ a = Analysis(
     pathex=[],
     datas=[
         ('aqw_auto.py', '.'),
+        ('version.py', '.'),
+        ('updater.py', '.'),
     ],
     hiddenimports=[
         'aqw_auto',
+        'updater',
+        'version',
         'pyautogui',
         'pynput',
     ],
