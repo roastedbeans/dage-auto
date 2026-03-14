@@ -414,10 +414,18 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.addWidget(MainPage())
 
+        bottom_row = QHBoxLayout()
         version_label = QLabel(f"v{APP_VERSION}" if _UPDATER_AVAILABLE else "")
         version_label.setStyleSheet("color: gray; font-size: 10px;")
-        version_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(version_label)
+        bottom_row.addWidget(version_label)
+        bottom_row.addStretch()
+        if _UPDATER_AVAILABLE:
+            self._check_btn = QPushButton("Check for Updates")
+            self._check_btn.setFixedHeight(22)
+            self._check_btn.setStyleSheet("font-size: 10px;")
+            self._check_btn.clicked.connect(self._manual_update_check)
+            bottom_row.addWidget(self._check_btn)
+        layout.addLayout(bottom_row)
 
         if _UPDATER_AVAILABLE:
             updater.start_check(GITHUB_REPO, APP_VERSION)
@@ -425,12 +433,23 @@ class MainWindow(QMainWindow):
             self._update_timer.timeout.connect(self._poll_update)
             self._update_timer.start(500)
 
+    def _manual_update_check(self):
+        self._check_btn.setEnabled(False)
+        self._check_btn.setText("Checking...")
+        updater.start_check(GITHUB_REPO, APP_VERSION)
+        self._update_timer.start(500)
+
     def _poll_update(self):
         result = updater.poll()
         if result is None:
             return
         self._update_timer.stop()
+        if hasattr(self, "_check_btn"):
+            self._check_btn.setEnabled(True)
+            self._check_btn.setText("Check for Updates")
         if not result.get("available"):
+            if hasattr(self, "_check_btn"):
+                QMessageBox.information(self, "No Updates", "You are on the latest version.")
             return
         latest = result["version"]
         asset_url = result.get("asset_url")
