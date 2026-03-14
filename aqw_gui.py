@@ -38,7 +38,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QLabel, QComboBox, QLineEdit, QDoubleSpinBox, QCheckBox, QPushButton,
-        QGroupBox, QTextEdit, QMessageBox,
+        QGroupBox, QTextEdit, QMessageBox, QProgressDialog,
     )
     from PySide6.QtCore import QTimer, Qt
     from PySide6.QtGui import QFont, QIcon
@@ -433,20 +433,53 @@ class MainWindow(QMainWindow):
         if not result.get("available"):
             return
         latest = result["version"]
-        url = result["url"]
+        asset_url = result.get("asset_url")
+        page_url = result["url"]
         box = QMessageBox(self)
         box.setWindowTitle("Update Available")
         box.setText(
             f"A new version <b>{latest}</b> is available!<br>"
-            f"You are running <b>v{APP_VERSION}</b>.<br><br>"
-            f"Download the update from GitHub Releases."
+            f"You are running <b>v{APP_VERSION}</b>."
         )
         box.setIcon(QMessageBox.Icon.Information)
-        download_btn = box.addButton("Download Update", QMessageBox.ButtonRole.AcceptRole)
+        if getattr(sys, "frozen", False) and asset_url:
+            update_btn = box.addButton("Update Now", QMessageBox.ButtonRole.AcceptRole)
+        else:
+            update_btn = box.addButton("Download Update", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
         box.exec()
-        if box.clickedButton() is download_btn:
-            webbrowser.open(url)
+        if box.clickedButton() is not update_btn:
+            return
+        if getattr(sys, "frozen", False) and asset_url:
+            self._start_in_app_update(asset_url, latest)
+        else:
+            webbrowser.open(page_url)
+
+    def _start_in_app_update(self, asset_url: str, latest: str):
+        app_path = os.path.normpath(os.path.join(sys.executable, "../../.."))
+        updater.download_and_install(asset_url, app_path)
+        self._progress = QProgressDialog(f"Downloading {latest}...", None, 0, 100, self)
+        self._progress.setWindowTitle("Updating Dage Auto")
+        self._progress.setCancelButton(None)
+        self._progress.setMinimumDuration(0)
+        self._progress.setAutoClose(False)
+        self._progress.show()
+        self._install_timer = QTimer(self)
+        self._install_timer.timeout.connect(self._poll_install)
+        self._install_timer.start(200)
+
+    def _poll_install(self):
+        self._progress.setValue(updater.download_progress())
+        done, error = updater.download_finished()
+        if not done:
+            return
+        self._install_timer.stop()
+        self._progress.close()
+        if error:
+            QMessageBox.critical(self, "Update Failed", error)
+            return
+        QMessageBox.information(self, "Restarting", "Update downloaded! Dage Auto will restart.")
+        QApplication.quit()
 
 
 def main():
