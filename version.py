@@ -1,2 +1,2 @@
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.2.0"
 GITHUB_REPO = "roastedbeans/dage-auto"
