@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -36,7 +37,8 @@ def _check(repo: str, current_version: str) -> None:
     try:
         url = f"https://api.github.com/repos/{repo}/releases/latest"
         req = urllib.request.Request(url, headers={"User-Agent": "dage-auto-updater"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        ctx = ssl._create_unverified_context()
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
             data = json.loads(resp.read().decode())
         tag = data.get("tag_name", "")
         html_url = data.get("html_url", f"https://github.com/{repo}/releases")
@@ -49,8 +51,8 @@ def _check(repo: str, current_version: str) -> None:
             _result = {"available": True, "version": tag, "url": html_url, "asset_url": asset_url}
         else:
             _result = {"available": False}
-    except Exception:
-        _result = {"available": False}
+    except Exception as e:
+        _result = {"available": False, "error": str(e)}
     finally:
         _done.set()
 

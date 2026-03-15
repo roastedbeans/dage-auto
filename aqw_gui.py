@@ -470,7 +470,11 @@ class MainWindow(QMainWindow):
             self._check_btn.setText("Check for Updates")
         if not result.get("available"):
             if self._manual_check:
-                QMessageBox.information(self, "No Updates", "You are on the latest version.")
+                error = result.get("error", "")
+                msg = "You are on the latest version."
+                if error:
+                    msg += f"\n\nDebug: {error}"
+                QMessageBox.information(self, "No Updates", msg)
             return
         latest = result["version"]
         asset_url = result.get("asset_url")
