@@ -136,13 +136,13 @@ def download_and_install(asset_url: str, app_path: str) -> None:
             with open(script, "w") as f:
                 f.write(
                     "#!/bin/bash\n"
-                    "sleep 1\n"
+                    "sleep 2\n"                                               # wait for old app to fully exit
                     f"rm -rf '{app_path}'\n"
-                    f"ditto '{new_app}' '{app_path}'\n"          # preserves .app bundle structure
-                    f"xattr -cr '{app_path}'\n"                  # clear quarantine
-                    f"chmod -R u+x '{app_path}/Contents/MacOS'\n" # ensure executables are runnable
-                    f"open '{app_path}'\n"
-                    f"rm -rf '{tmp_dir}'\n"
+                    f"ditto '{new_app}' '{app_path}'\n"                       # preserves .app bundle structure
+                    f"xattr -dr com.apple.quarantine '{app_path}'\n"          # remove quarantine flag
+                    f"chmod -R u+x '{app_path}/Contents/MacOS'\n"             # ensure executables are runnable
+                    f"open -n '{app_path}'\n"                                 # -n forces a new instance
+                    f"sleep 1 && rm -rf '{tmp_dir}'\n"                        # cleanup after app launches
                 )
             os.chmod(script, 0o755)
             subprocess.Popen(
