@@ -50,23 +50,25 @@ BACKGROUND_APP_ORDER = [
 # Note: 0x16=22 is key 6, 0x17=23 is key 5 on Mac number row
 MAC_KEY_CODES = {"1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22}
 
-# Class combos: (combo, delay). Delay None = compute from CLASS_COOLDOWNS.
+# Class combos: (combo, delay).
+# All delays are 1.0s — AQW ignores key presses while a skill is on cooldown,
+# so pressing every ~1s lets the game handle cooldown gating naturally.
 CLASSES = {
     "random": ("2345", 0.1),
-    "archmage": ("3214321432145", None),  # Arcane Sigil (5) costs 40% HP
-    "lightcaster": ("423523232", None),
-    "archpaladin": ("423523", None),  # Hymn of Light (3) heals self
-    "scarlet sorceress": ("523532534", None),
-    "cavalier guard": ("6524325234", None),
-    "dragon of time": ("23543", None),  # 2&4 cost 10% HP per target; use Safe mode for solo
-    "blaze binder": ("2354", None),
-    "legion revenant": ("4523", None),  # Depraved Empowerment (4) targets self
-    "lord of order": ("2345", None),
-    "void highlord": ("2345234234", None),  # 2&4 cost 20% HP; 3 has lifesteal heal
-    "timeless chronomancer": ("42224253", None),  # Delay auto-computed when pattern selected
-    "chrono shadowhunter": ("24444445", None),  # 2=Reload, 4=FMJ bullets, 5=Silver Bullet nuke
-    "chaos avenger": ("3542", None),  # 3=Flux (debuff), 5=Fury Unleashed (burst), 4=Chaos Bulwark (defense), 2=Chaos Siphon (lifesteal)
-    "yami no ronin": ("3225225", None),  # Default: Dodge combo. Use pattern selector for others.
+    "archmage": ("3214321432145", 1.0),  # Arcane Sigil (5) costs 40% HP
+    "lightcaster": ("423523232", 1.0),
+    "archpaladin": ("423523", 1.0),  # Hymn of Light (3) heals self
+    "scarlet sorceress": ("523532534", 1.0),
+    "cavalier guard": ("6524325234", 1.0),
+    "dragon of time": ("23543", 1.0),  # 2&4 cost 10% HP per target; use Safe mode for solo
+    "blaze binder": ("2354", 1.0),
+    "legion revenant": ("4523", 1.0),  # Depraved Empowerment (4) targets self
+    "lord of order": ("2345", 1.0),
+    "void highlord": ("2345234234", 1.0),  # 2&4 cost 20% HP; 3 has lifesteal heal
+    "timeless chronomancer": ("42224253", 1.0),  # Use pattern selector for class-item variants
+    "chrono shadowhunter": ("24444445", 1.0),  # 2=Reload, 4=FMJ bullets, 5=Silver Bullet nuke
+    "chaos avenger": ("3542", 1.0),  # 3=Flux (debuff), 5=Fury Unleashed (burst), 4=Chaos Bulwark (defense), 2=Chaos Siphon (lifesteal)
+    "yami no ronin": ("3225225", 1.0),  # Default: Dodge combo. Use pattern selector for others.
 }
 
 # Skill cooldowns (seconds) - from AQW wiki. Used to compute min delay.
@@ -83,33 +85,49 @@ CLASS_COOLDOWNS = {
     "void highlord": {"1": 2.3, "2": 4.0, "3": 5.0, "4": 4.0, "5": 15.0},
     # Chrono ShadowHunter (same as Chrono ShadowSlayer): 2=Reload 6s, 4=FMJ 1.5s, 5=Silver Bullet 6s
     "chrono shadowhunter": {"2": 6.0, "4": 1.5, "5": 6.0},
-    # Chaos Avenger: 5=Fury Unleashed (35s) excluded — delay computed from 2,3,4 only (~3.83s).
-    # Skill 5 fires opportunistically; AQW ignores presses while on cooldown.
+    # Chaos Avenger: 5=Fury Unleashed (35s) excluded — bot presses it opportunistically
+    # every cycle; AQW ignores the press while still on cooldown.
     "chaos avenger": {"2": 6.0, "3": 15.0, "4": 6.0},
     # Yami no Ronin: 1=Batto 2s, 2=Tachi 3s, 3=Yami no Maku 14s, 4=Kettou 3s, 5=Jigen Kogeki 6s
     "yami no ronin": {"1": 2.0, "2": 3.0, "3": 14.0, "4": 3.0, "5": 6.0},
 }
 
-# TCM skill cooldowns (seconds) - from AQW wiki
-# Skill 1: Corrupted Sand Strike (2s) — auto attack
-# Skill 2: Sand Rift (2.5s) — deals dmg, applies Temporal Rift (stacks 4x, 30s) used by other skills
-# Skill 3: Hourglass Inversion (8s) — heal self, consumes Temporal Rift stacks
-#   + Hourglass of Power: grants Power (+10% all stats) for 30s
-#   + Infinite Corruption: grants Hourglass Heal (HoT) for 20s
-# Skill 4: Corruption Through Time (6s) — +20% damage for 10s (doesn't stack)
-#   + Entropic Corruption: Entropic Power (+100% dmg, 4s), Entropic Mana (+30% haste/-50% mana, 7s),
-#                          Entropic Harm (enemy +150% dmg taken, 10s), Focus (enemy attacks you, 3s)
-#   + Hourglass of Transience: 1st press = Transient (self DoT, 10s);
-#                              2nd press while Transient active = Ephemeral (+50% dodge/dmg, 5s)
-# Skill 5: Temporal Collapse (15s) — deals dmg based on recent dmg dealt, consumes Temporal Rift stacks
-TCM_COOLDOWNS = {"1": 2.0, "2": 2.5, "3": 8.0, "4": 6.0, "5": 15.0, "6": 20.0}
+# TCM cooldowns (seconds) — from tcm-class-item.md
+# Skills 1–5:
+#   1: Corrupted Sand Strike 2s | 2: Sand Rift 2.5s | 3: Hourglass Inversion 8s
+#   4: Corruption Through Time 6s | 5: Temporal Collapse 15s
+# Class items (slot 6) — only TCM items from doc:
+#   Corruptions: Entropic 6s, Foresee 60s, Infinite 6s
+#   Hourglasses: 20s (doc: 2h duration; 20s reuse from wiki)
+TCM_SKILL_COOLDOWNS = {"1": 2.0, "2": 2.5, "3": 8.0, "4": 6.0, "5": 15.0}
+TCM_CLASS_ITEM_COOLDOWNS = {
+    "entropic corruption": 6.0,
+    "foresee corruption": 60.0,
+    "infinite corruption": 6.0,
+    "hourglass of power": 20.0,
+    "hourglass of transience": 20.0,
+    "hourglass of paradise": 20.0,
+}
+TCM_COOLDOWNS = {**TCM_SKILL_COOLDOWNS, "6": 20.0}  # default 6 = hourglass
+
+
+def _tcm_cooldown_for_consumable(hint: str) -> float:
+    """Resolve slot-6 cooldown from consumable_hint using TCM_CLASS_ITEM_COOLDOWNS."""
+    if not hint:
+        return 20.0
+    hint_lower = hint.lower()
+    # Longest match first (e.g. "entropic corruption" before "entropic")
+    for item, cd in sorted(TCM_CLASS_ITEM_COOLDOWNS.items(), key=lambda x: -len(x[0])):
+        if item in hint_lower:
+            return cd
+    return 20.0
 
 
 def _min_delay_for_combo(combo: str, cooldowns: dict) -> float:
     """
-    Compute minimum uniform delay (seconds) between keys so no skill is used before its cooldown.
-    For each key K at positions [i1, i2, ...], we need (gap in keys) * delay >= cooldown[K].
-    Returns delay with small buffer (1.02x) for input latency.
+    Compute the minimum inter-skill delay so no skill repeats before its cooldown expires.
+    Only used as a fallback when no explicit delay is set (e.g. custom combos without cooldown data).
+    run_ability_combo handles per-skill cooldown waiting at runtime, so preset classes use 1.0s.
     """
     n = len(combo)
     min_d = 0.0
@@ -145,23 +163,40 @@ def _min_delay_for_combo(combo: str, cooldowns: dict) -> float:
 #   AQW Wiki: https://aqwwiki.wikidot.com/timeless-chronomancer
 CLASS_PATTERNS = {
     "dragon of time": [
-        ("23543", None, "DPS (2&4 cost 10% HP each)"),
-        ("2353", None, "Safe (no Burning Fates, no self-damage from 4)"),
+        ("23543", 1.0, "DPS (2&4 cost 10% HP each)"),
+        ("2353", 1.0, "Safe (no Burning Fates, no self-damage from 4)"),
     ],
-    # TCM: 6 class items + Power+Entropic (pre-apply hourglass, swap to corruption). Key 6 (20s CD) = consumable thread.
+    # TCM: (combo, delay, display_name, consumable_hint).
+    # Slot-6 cooldown derived from consumable_hint via TCM_CLASS_ITEM_COOLDOWNS.
+    # Patterns containing "6" suppress the consumable thread (key 6 is pressed inside the combo).
     "timeless chronomancer": [
-        ("34222425", None, "Hourglass of Power", "Hourglass of Power"),
-        ("42242253", None, "Hourglass of Transience", "Hourglass of Transience"),
-        ("42224253", None, "Hourglass of Paradise", "Hourglass of Paradise"),
-        ("634222425", None, "Entropic Corruption", "Entropic Corruption"),
-        ("634222425", None, "Power + Entropic (pre-apply Power, equip Entropic)", "Pre-apply Hourglass of Power (3), then equip Entropic Corruption"),
-        ("142224253", None, "Infinite Corruption", "Infinite Corruption"),
-        ("642434223422342262422253", None, "Foresee Corruption", "Foresee Corruption"),
+        # Hourglasses
+        ("34222425", 1.0, "Power", "Hourglass of Power"),
+        ("42242253", 1.0, "Transience", "Hourglass of Transience"),
+        ("42224253", 1.0, "Paradise", "Hourglass of Paradise"),
+        # Entropic
+        ("634222425", 1.0, "Entropic (7s)", "Entropic Corruption"),
+        ("634222425", 1.0, "Power + Entropic", "Entropic Corruption"),
+        ("6342225", 1.0, "Entropic Short (5s)", "Entropic Corruption"),
+        ("63424225", 1.0, "Entropic (4 rift)", "Entropic Corruption"),
+        ("6342222425", 1.0, "Entropic (8s)", "Entropic Corruption"),
+        ("63242224225", 1.0, "Entropic (9s)", "Entropic Corruption"),
+        ("634222242245", 1.0, "Entropic (10s)", "Entropic Corruption"),
+        # Infinite
+        ("142224253", 1.0, "Infinite", "Infinite Corruption"),
+        ("6432422253", 1.0, "Transience + Infinite", "Infinite Corruption"),
+        ("6432222253", 1.0, "Transience + Infinite (short)", "Infinite Corruption"),
+        ("64324222422253", 1.0, "Transience + Infinite (ext)", "Infinite Corruption"),
+        # Entropic combos
+        ("4322462245", 1.0, "Entropic + Transience", "Entropic Corruption"),
+        ("4324224622453", 1.0, "Entropic + Infinite", "Infinite Corruption"),
+        # Foresee
+        ("6424342234223422426422253", 1.0, "Foresee", "Foresee Corruption"),
     ],
     "yami no ronin": [
-        ("3225225", None, "Dodge"),
-        ("4344242425", None, "Full offence"),
-        ("222345", None, "Stack Tachi"),
+        ("3225225", 1.0, "Dodge"),
+        ("4344242425", 1.0, "Full offence"),
+        ("222345", 1.0, "Stack Tachi"),
     ],
 }
 
@@ -330,13 +365,21 @@ CLASSES_NO_AUTO_PREPEND = frozenset({"chrono shadowhunter"})
 LIVE_CONFIG: dict | None = None
 
 
-def resolve_combo_delay(class_name: str, pattern_index: int | None, attack: str, base_delay: float) -> tuple[str, float]:
-    """Resolve combo and delay from class/pattern. Returns (combo, delay). Used by GUI for live switching."""
+def resolve_combo_delay(class_name: str, pattern_index: int | None, attack: str, base_delay: float) -> tuple[str, float, dict]:
+    """Resolve combo, delay, and per-skill cooldown overrides from class/pattern.
+    Returns (combo, delay, cooldown_overrides). Used by GUI for live switching.
+    For TCM: cooldown_overrides['6'] is derived from consumable_hint via TCM_CLASS_ITEM_COOLDOWNS."""
+    cooldown_overrides: dict = {}
     if class_name and class_name in CLASSES:
         if class_name in CLASS_PATTERNS and pattern_index is not None:
             patterns = CLASS_PATTERNS[class_name]
             idx = min(pattern_index, len(patterns) - 1)
-            combo, delay_val = patterns[idx][0], patterns[idx][1]
+            entry = patterns[idx]
+            combo, delay_val = entry[0], entry[1]
+            if len(entry) > 4:
+                cooldown_overrides = dict(entry[4])
+            if class_name == "timeless chronomancer" and len(entry) > 3 and entry[3]:
+                cooldown_overrides["6"] = _tcm_cooldown_for_consumable(entry[3])
             if delay_val is None:
                 cooldowns = TCM_COOLDOWNS if class_name == "timeless chronomancer" else CLASS_COOLDOWNS.get(class_name, {})
                 delay = _min_delay_for_combo(combo, cooldowns) if cooldowns else base_delay
@@ -353,7 +396,7 @@ def resolve_combo_delay(class_name: str, pattern_index: int | None, attack: str,
     else:
         combo = attack if attack and all(c in "123456" for c in attack) else "412344"
         delay = base_delay
-    return (combo, delay)
+    return (combo, delay, cooldown_overrides)
 
 
 def _combo_with_auto(combo: str, class_name: str | None = None) -> str:
@@ -363,21 +406,49 @@ def _combo_with_auto(combo: str, class_name: str | None = None) -> str:
     return ("1" + combo) if combo and combo[0] != "1" else combo
 
 
-def run_ability_combo(combo: str, delay: float, class_name: str | None = None, use_live_config: bool = False):
-    """Loop: auto (1) to target + combo keys. When use_live_config, reads combo/delay from LIVE_CONFIG each cycle (mid-fight switch)."""
+def run_ability_combo(combo: str, delay: float, class_name: str | None = None, use_live_config: bool = False, cooldown_overrides: dict | None = None):
+    """Loop: auto (1) to target + combo keys. When use_live_config, reads combo/delay from LIVE_CONFIG each cycle (mid-fight switch).
+
+    Between different skills: waits `delay` seconds (the inter-skill gap, ~1s).
+    Before re-pressing the same skill: waits max(delay, remaining cooldown) so
+    it is never pressed before its individual cooldown expires.
+    cooldown_overrides: per-skill overrides merged on top of base class cooldowns (e.g. {"6": 6.0} for Entropic).
+    """
     global running, is_paused, LIVE_CONFIG
+    last_press: dict[str, float] = {}  # key → timestamp of last press
+
     while running:
         if use_live_config and LIVE_CONFIG:
-            combo = LIVE_CONFIG.get("combo", combo)
+            new_combo = LIVE_CONFIG.get("combo", combo)
+            new_class = LIVE_CONFIG.get("class_name", class_name)
+            if new_combo != combo or new_class != class_name:
+                last_press.clear()  # reset cooldown tracking on class/combo switch
+            combo = new_combo
             delay = LIVE_CONFIG.get("delay", delay)
-            class_name = LIVE_CONFIG.get("class_name", class_name)
+            class_name = new_class
+            cooldown_overrides = LIVE_CONFIG.get("cooldown_overrides", cooldown_overrides)
+
+        base_cooldowns = (
+            TCM_COOLDOWNS if class_name == "timeless chronomancer"
+            else CLASS_COOLDOWNS.get(class_name or "", {})
+        )
+        cooldowns = {**base_cooldowns, **(cooldown_overrides or {})}
         keys = _combo_with_auto(combo, class_name)
+
         if not is_paused:
             for key in keys:
                 if not running:
                     break
+                cd = cooldowns.get(key, 0)
+                now = time.time()
+                if cd > 0 and key in last_press:
+                    elapsed = now - last_press[key]
+                    wait = max(delay, cd - elapsed)
+                else:
+                    wait = delay
+                _sleep(wait)
                 _press_key(key)
-                _sleep(delay)
+                last_press[key] = time.time()
         _sleep(0.03)
 
 
@@ -452,14 +523,17 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     no_background = config.get("no_background", False)
     pattern_index = config.get("pattern_index")
 
-    combo, delay = resolve_combo_delay(class_name, pattern_index, attack, base_delay)
+    combo, delay, cooldown_overrides = resolve_combo_delay(class_name, pattern_index, attack, base_delay)
 
     # If combo already includes key 6, suppress the consumable thread to avoid double-pressing
     if "6" in combo:
         no_consumable = True
 
-    # Consumable interval: TCM hourglass 20s; others use 6s minimum (AQW consumable cooldown)
-    consumable_interval = TCM_COOLDOWNS.get("6", 6.0) if class_name == "timeless chronomancer" else 6.0
+    # Consumable interval: use per-pattern key-6 override when available, else TCM base (20s for hourglasses), else 6s
+    if class_name == "timeless chronomancer":
+        consumable_interval = cooldown_overrides.get("6", TCM_COOLDOWNS.get("6", 20.0))
+    else:
+        consumable_interval = 6.0
 
     # Target app (macOS)
     target_pid = None
@@ -488,9 +562,9 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     _log(f"  Quest turn-in: {'Yes' if quest_pos else 'No'}")
     _log(f"  Accept drop: {'Yes' if accept_drop_pos else 'No'}")
     running = True
-    LIVE_CONFIG = {"combo": combo, "delay": delay, "class_name": class_name}
+    LIVE_CONFIG = {"combo": combo, "delay": delay, "class_name": class_name, "cooldown_overrides": cooldown_overrides}
     threads = [
-        threading.Thread(target=run_ability_combo, args=(combo, delay, class_name, True), daemon=True),
+        threading.Thread(target=run_ability_combo, args=(combo, delay, class_name, True, cooldown_overrides), daemon=True),
         threading.Thread(target=run_stdin_fallback, daemon=True),
     ]
     if not no_consumable:
@@ -644,11 +718,17 @@ Examples:
         return
 
     # Resolve combo and delay
+    cooldown_overrides: dict = {}
     if getattr(args, "class_name", None):
         class_name = args.class_name
         pattern_index = getattr(args, "pattern", 0)
         if class_name in CLASS_PATTERNS and pattern_index < len(CLASS_PATTERNS[class_name]):
-            combo, delay_val = CLASS_PATTERNS[class_name][pattern_index][0], CLASS_PATTERNS[class_name][pattern_index][1]
+            entry = CLASS_PATTERNS[class_name][pattern_index]
+            combo, delay_val = entry[0], entry[1]
+            if len(entry) > 4:
+                cooldown_overrides = dict(entry[4])
+            if class_name == "timeless chronomancer" and len(entry) > 3 and entry[3]:
+                cooldown_overrides["6"] = _tcm_cooldown_for_consumable(entry[3])
         else:
             preset = CLASSES[class_name]
             combo, delay_val = preset[0], preset[1]
@@ -756,9 +836,11 @@ Examples:
     if "6" in combo:
         args.no_consumable = True
 
-    consumable_interval = TCM_COOLDOWNS.get("6", 6.0) if getattr(args, "class_name", None) == "timeless chronomancer" else 6.0
-
     cli_class = getattr(args, "class_name", None)
+    if cli_class == "timeless chronomancer":
+        consumable_interval = cooldown_overrides.get("6", TCM_COOLDOWNS.get("6", 20.0))
+    else:
+        consumable_interval = 6.0
     print("\n--- Running ---")
     print(f"  Combo: {_combo_with_auto(combo, cli_class)}  Delay: {delay}s")
     if not (target_pid or target_pids):
@@ -775,7 +857,7 @@ Examples:
     running = True
 
     threads = [
-        threading.Thread(target=run_ability_combo, args=(combo, delay, cli_class), daemon=True),
+        threading.Thread(target=run_ability_combo, args=(combo, delay, cli_class, False, cooldown_overrides), daemon=True),
         threading.Thread(target=run_stdin_fallback, daemon=True),
     ]
 

@@ -3,14 +3,38 @@
 Dage Auto - Desktop GUI for Adventure Quest Worlds automation.
 """
 
+import ctypes
 import os
+import platform
 import queue
+import subprocess
 import sys
 import threading
 import webbrowser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+
+def _is_accessibility_granted() -> bool:
+    """Check if macOS Accessibility permission is granted."""
+    try:
+        lib = ctypes.cdll.LoadLibrary(
+            "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+        )
+        lib.AXIsProcessTrusted.restype = ctypes.c_bool
+        return lib.AXIsProcessTrusted()
+    except Exception:
+        return True  # non-macOS or check failed — don't show warning
+
+
+def _open_accessibility_settings():
+    major = int(platform.mac_ver()[0].split(".")[0])
+    if major >= 13:
+        url = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility"
+    else:
+        url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    subprocess.run(["open", url])
 
 
 def _icon_path():
@@ -452,6 +476,26 @@ class MainWindow(QMainWindow):
             self._update_timer = QTimer(self)
             self._update_timer.timeout.connect(self._poll_update)
             self._update_timer.start(500)
+
+        QTimer.singleShot(1500, self._check_accessibility)
+
+    def _check_accessibility(self):
+        if _is_accessibility_granted():
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("Accessibility Permission Required")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(
+            "Dage Auto needs Accessibility permission to control your game.<br><br>"
+            "After an update, macOS requires you to re-grant this permission.<br><br>"
+            "Click <b>Open Settings</b>, find <b>Dage Auto</b> in the list, "
+            "remove it, then add it back."
+        )
+        open_btn = box.addButton("Open Settings", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is open_btn:
+            _open_accessibility_settings()
 
     def _manual_update_check(self):
         self._manual_check = True
