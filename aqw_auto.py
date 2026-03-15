@@ -56,18 +56,18 @@ MAC_KEY_CODES = {"1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22}
 CLASSES = {
     "random": ("2345", 0.1),
     "archmage": ("3214321432145", 1.0),  # Arcane Sigil (5) costs 40% HP
-    "lightcaster": ("423523232", 1.0),
-    "archpaladin": ("423523", 1.0),  # Hymn of Light (3) heals self
-    "scarlet sorceress": ("523532534", 1.0),
-    "cavalier guard": ("6524325234", 1.0),
-    "dragon of time": ("23543", 1.0),  # 2&4 cost 10% HP per target; use Safe mode for solo
-    "blaze binder": ("2354", 1.0),
-    "legion revenant": ("4523", 1.0),  # Depraved Empowerment (4) targets self
-    "lord of order": ("2345", 1.0),
-    "void highlord": ("2345234234", 1.0),  # 2&4 cost 20% HP; 3 has lifesteal heal
+    "lightcaster": ("423523232123423", 1.0),  # filler for 5 (15s cd)
+    "archpaladin": ("4235232323232323232323232", 1.0),  # filler for 4,5 (25s cd); 25 keys
+    "scarlet sorceress": ("52353253423", 1.0),  # filler for 5 (6s cd)
+    "cavalier guard": ("65243252342323423234", 1.0),  # filler for 6 (20s cd)
+    "dragon of time": ("2354323232", 1.0),  # filler for 5 (8s cd)
+    "blaze binder": ("235423232323232323", 1.0),  # filler for 4 (16s cd); 4 once per 18 keys
+    "legion revenant": ("432532132432", 1.0),  # filler avoids 2→5 delay
+    "lord of order": ("234523423423", 1.0),  # filler for 4,5 (6s,8s cd)
+    "void highlord": ("23452342342342", 1.0),  # filler for 5 (15s cd)
     "timeless chronomancer": ("42224253", 1.0),  # Use pattern selector for class-item variants
     "chrono shadowhunter": ("24444445", 1.0),  # 2=Reload, 4=FMJ bullets, 5=Silver Bullet nuke
-    "chaos avenger": ("3542", 1.0),  # 3=Flux (debuff), 5=Fury Unleashed (burst), 4=Chaos Bulwark (defense), 2=Chaos Siphon (lifesteal)
+    "chaos avenger": ("3542242424242424", 1.0),  # filler for 3 (15s cd)
     "yami no ronin": ("3225225", 1.0),  # Default: Dodge combo. Use pattern selector for others.
 }
 
@@ -162,9 +162,12 @@ def _min_delay_for_combo(combo: str, cooldowns: dict) -> float:
 #   SLGMA:    https://docs.google.com/document/d/1pHEYDB5JM2qSBFYwVs6Hkj17x24TElB1mtuQUyidv18/edit
 #   AQW Wiki: https://aqwwiki.wikidot.com/timeless-chronomancer
 CLASS_PATTERNS = {
+    "legion revenant": [
+        ("432532132432", 1.0, "432532"),  # filler 132432 adds 6 keys; 12 keys between 5s
+    ],
     "dragon of time": [
-        ("23543", 1.0, "DPS (2&4 cost 10% HP each)"),
-        ("2353", 1.0, "Safe (no Burning Fates, no self-damage from 4)"),
+        ("2354323232", 1.0, "DPS (2&4 cost 10% HP each)"),
+        ("235323232", 1.0, "Safe (no Burning Fates, no self-damage from 4)"),
     ],
     # TCM: (combo, delay, display_name, consumable_hint).
     # Slot-6 cooldown derived from consumable_hint via TCM_CLASS_ITEM_COOLDOWNS.
