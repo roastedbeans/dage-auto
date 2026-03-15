@@ -169,29 +169,30 @@ CLASS_PATTERNS = {
     # TCM: (combo, delay, display_name, consumable_hint).
     # Slot-6 cooldown derived from consumable_hint via TCM_CLASS_ITEM_COOLDOWNS.
     # Patterns containing "6" suppress the consumable thread (key 6 is pressed inside the combo).
+    # Delay 1.15s: TCM has tight cooldowns (2s, 2.5s); extra margin helps registration.
     "timeless chronomancer": [
         # Hourglasses
-        ("34222425", 1.0, "Power", "Hourglass of Power"),
-        ("42242253", 1.0, "Transience", "Hourglass of Transience"),
-        ("42224253", 1.0, "Paradise", "Hourglass of Paradise"),
+        ("34222425", 1.15, "Power", "Hourglass of Power"),
+        ("42242253", 1.15, "Transience", "Hourglass of Transience"),
+        ("42224253", 1.15, "Paradise", "Hourglass of Paradise"),
         # Entropic
-        ("634222425", 1.0, "Entropic (7s)", "Entropic Corruption"),
-        ("634222425", 1.0, "Power + Entropic", "Entropic Corruption"),
-        ("6342225", 1.0, "Entropic Short (5s)", "Entropic Corruption"),
-        ("63424225", 1.0, "Entropic (4 rift)", "Entropic Corruption"),
-        ("6342222425", 1.0, "Entropic (8s)", "Entropic Corruption"),
-        ("63242224225", 1.0, "Entropic (9s)", "Entropic Corruption"),
-        ("634222242245", 1.0, "Entropic (10s)", "Entropic Corruption"),
+        ("634222425", 1.15, "Entropic (7s)", "Entropic Corruption"),
+        ("634222425", 1.15, "Power + Entropic", "Entropic Corruption"),
+        ("6342225", 1.15, "Entropic Short (5s)", "Entropic Corruption"),
+        ("63424225", 1.15, "Entropic (4 rift)", "Entropic Corruption"),
+        ("6342222425", 1.15, "Entropic (8s)", "Entropic Corruption"),
+        ("63242224225", 1.15, "Entropic (9s)", "Entropic Corruption"),
+        ("634222242245", 1.15, "Entropic (10s)", "Entropic Corruption"),
         # Infinite
-        ("142224253", 1.0, "Infinite", "Infinite Corruption"),
-        ("6432422253", 1.0, "Transience + Infinite", "Infinite Corruption"),
-        ("6432222253", 1.0, "Transience + Infinite (short)", "Infinite Corruption"),
-        ("64324222422253", 1.0, "Transience + Infinite (ext)", "Infinite Corruption"),
+        ("142224253", 1.15, "Infinite", "Infinite Corruption"),
+        ("6432422253", 1.15, "Transience + Infinite", "Infinite Corruption"),
+        ("6432222253", 1.15, "Transience + Infinite (short)", "Infinite Corruption"),
+        ("64324222422253", 1.15, "Transience + Infinite (ext)", "Infinite Corruption"),
         # Entropic combos
-        ("4322462245", 1.0, "Entropic + Transience", "Entropic Corruption"),
-        ("4324224622453", 1.0, "Entropic + Infinite", "Infinite Corruption"),
+        ("4322462245", 1.15, "Entropic + Transience", "Entropic Corruption"),
+        ("4324224622453", 1.15, "Entropic + Infinite", "Infinite Corruption"),
         # Foresee
-        ("6424342234223422426422253", 1.0, "Foresee", "Foresee Corruption"),
+        ("6424342234223422426422253", 1.15, "Foresee", "Foresee Corruption"),
     ],
     "yami no ronin": [
         ("3225225", 1.0, "Dodge"),
@@ -332,6 +333,7 @@ def _press_key_to_app(char: str, pid: int, use_psn: bool = False):
 
 _key_lock = threading.Lock()
 _KEY_MIN_INTERVAL = 0.08  # Min seconds between keys so game registers each (avoids drop after consumable 6)
+_COOLDOWN_BUFFER = 0.15   # Extra wait when re-pressing same skill (covers input latency, server lag)
 
 
 def _sleep(seconds: float):
@@ -443,7 +445,7 @@ def run_ability_combo(combo: str, delay: float, class_name: str | None = None, u
                 now = time.time()
                 if cd > 0 and key in last_press:
                     elapsed = now - last_press[key]
-                    wait = max(delay, cd - elapsed)
+                    wait = max(delay, cd - elapsed + _COOLDOWN_BUFFER)
                 else:
                     wait = delay
                 _sleep(wait)
