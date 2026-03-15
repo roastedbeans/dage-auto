@@ -82,6 +82,10 @@ ability_thread = None
 log_queue = None
 log_lines = []
 
+# OTP-style skill box styles
+_SKILL_BOX_INACTIVE = "background:#2d3748; border:2px solid #4a5568; border-radius:6px; color:#718096; font-size:14px; font-weight:bold;"
+_SKILL_BOX_ACTIVE = "background:#2b6cb0; border:2px solid #63b3ed; border-radius:6px; color:#ebf8ff; font-size:14px; font-weight:bold;"
+
 
 def build_config(cls, attack, delay, quest, no_consumable, no_bg, quest_pos, accept_drop, accept_drop_pos, pattern_index=None):
     """Build config dict for run_ability_from_gui."""
@@ -176,11 +180,26 @@ class MainPage(QWidget):
         delay_row.addWidget(self.delay_spin)
         layout.addLayout(delay_row)
 
-        # Active combo display
+        # Active combo display (OTP-style)
+        combo_container = QWidget()
+        combo_layout = QVBoxLayout(combo_container)
+        combo_layout.setSpacing(8)
         self.combo_display = QLabel("")
-        self.combo_display.setStyleSheet("color: #0d7377; font-size: 12px; font-family: monospace; font-weight: 500;")
-        self.combo_display.setWordWrap(True)
-        layout.addWidget(self.combo_display)
+        self.combo_display.setStyleSheet("color: #0d7377; font-size: 16px; font-family: monospace; font-weight: 600;")
+        self.combo_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        combo_layout.addWidget(self.combo_display)
+        skill_row = QHBoxLayout()
+        skill_row.setSpacing(6)
+        self.skill_boxes: list[QLabel] = []
+        for i in range(1, 7):
+            lb = QLabel(str(i))
+            lb.setFixedSize(40, 40)
+            lb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lb.setStyleSheet(_SKILL_BOX_INACTIVE)
+            self.skill_boxes.append(lb)
+            skill_row.addWidget(lb)
+        combo_layout.addLayout(skill_row)
+        layout.addWidget(combo_container)
 
         # Options
         opts = QGroupBox("Options")
@@ -237,15 +256,24 @@ class MainPage(QWidget):
         """Include auto (1) for targeting when combo doesn't start with it. Skip for Chrono ShadowHunter."""
         return _combo_with_auto(combo, class_name)
 
+    def _update_skill_boxes(self, combo: str):
+        """Highlight skill boxes 1-6 that appear in the combo."""
+        active = set(c for c in combo if c in "123456")
+        for i, lb in enumerate(self.skill_boxes):
+            lb.setStyleSheet(_SKILL_BOX_ACTIVE if str(i + 1) in active else _SKILL_BOX_INACTIVE)
+
     def _update_combo_display(self):
         cls = self.class_combo.currentText()
         if cls == "Custom":
             combo = self.attack_edit.text().strip()
             if combo and all(c in "123456" for c in combo):
                 delay = self.delay_spin.value()
-                self.combo_display.setText(f"Combo: {self._display_combo(combo, None)}  Delay: {delay}s")
+                displayed = self._display_combo(combo, None)
+                self.combo_display.setText(f"Combo: {displayed}  Delay: {delay}s")
+                self._update_skill_boxes(displayed.replace(" ", ""))
             else:
                 self.combo_display.setText("")
+                self._update_skill_boxes("")
             return
         if cls in CLASS_PATTERNS:
             idx = self.pattern_combo.currentIndex()
@@ -254,18 +282,24 @@ class MainPage(QWidget):
                 combo, delay_val = patterns[idx][0], patterns[idx][1]
                 cooldowns = TCM_COOLDOWNS if cls == "timeless chronomancer" else CLASS_COOLDOWNS.get(cls, {})
                 delay = delay_val if delay_val is not None else (_min_delay_for_combo(combo, cooldowns) if cooldowns else self.delay_spin.value())
-                self.combo_display.setText(f"Combo: {self._display_combo(combo, cls)}  Delay: {delay}s")
+                displayed = self._display_combo(combo, cls)
+                self.combo_display.setText(f"Combo: {displayed}  Delay: {delay}s")
+                self._update_skill_boxes(displayed.replace(" ", ""))
             else:
                 self.combo_display.setText("")
+                self._update_skill_boxes("")
         else:
             preset = CLASSES.get(cls)
             if preset:
                 combo, delay_val = preset[0], preset[1]
                 cooldowns = CLASS_COOLDOWNS.get(cls, {})
                 delay = delay_val if delay_val is not None else (_min_delay_for_combo(combo, cooldowns) if cooldowns else self.delay_spin.value())
-                self.combo_display.setText(f"Combo: {self._display_combo(combo, cls)}  Delay: {delay}s")
+                displayed = self._display_combo(combo, cls)
+                self.combo_display.setText(f"Combo: {displayed}  Delay: {delay}s")
+                self._update_skill_boxes(displayed.replace(" ", ""))
             else:
                 self.combo_display.setText("")
+                self._update_skill_boxes("")
 
     def _update_live_config_if_running(self):
         """When running, update LIVE_CONFIG so combo switches mid-fight."""

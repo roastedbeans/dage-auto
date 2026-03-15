@@ -333,7 +333,7 @@ def _press_key_to_app(char: str, pid: int, use_psn: bool = False):
 
 _key_lock = threading.Lock()
 _KEY_MIN_INTERVAL = 0.08  # Min seconds between keys so game registers each (avoids drop after consumable 6)
-_COOLDOWN_BUFFER = 0.15   # Extra wait when re-pressing same skill (covers input latency, server lag)
+_COOLDOWN_BUFFER = 0.5   # Extra wait when re-pressing same skill (covers input latency, server lag)
 
 
 def _sleep(seconds: float):
