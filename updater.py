@@ -20,6 +20,28 @@ import urllib.request
 import zipfile
 
 import certifi
+import sys
+
+# ── SSL context (handles frozen app where certifi path may be wrong) ────────────
+
+
+def _get_ssl_context():
+    """Return SSL context with certifi CA, or system default if certifi path missing (frozen app)."""
+    try:
+        cert_path = certifi.where()
+        if cert_path and os.path.isfile(cert_path):
+            return ssl.create_default_context(cafile=cert_path)
+    except Exception:
+        pass
+    # Fallback: PyInstaller bundle may have certifi data in _MEIPASS
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", "")
+        for rel in ("certifi/cacert.pem", "cacert.pem"):
+            candidate = os.path.join(meipass, rel) if meipass else ""
+            if candidate and os.path.isfile(candidate):
+                return ssl.create_default_context(cafile=candidate)
+    return ssl.create_default_context()
+
 
 # ── update check ──────────────────────────────────────────────────────────────
 
@@ -39,7 +61,7 @@ def _check(repo: str, current_version: str) -> None:
     try:
         url = f"https://api.github.com/repos/{repo}/releases/latest"
         req = urllib.request.Request(url, headers={"User-Agent": "dage-auto-updater"})
-        ctx = ssl.create_default_context(cafile=certifi.where())
+        ctx = _get_ssl_context()
         with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
             data = json.loads(resp.read().decode())
         tag = data.get("tag_name", "")
@@ -104,7 +126,7 @@ def download_and_install(asset_url: str, app_path: str) -> None:
             tmp_dir = tempfile.mkdtemp(prefix="dage-update-")
             zip_path = os.path.join(tmp_dir, "update.zip")
 
-            ctx = ssl.create_default_context(cafile=certifi.where())
+            ctx = _get_ssl_context()
             opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
             with opener.open(asset_url) as resp:
                 total = int(resp.headers.get("Content-Length", 0))

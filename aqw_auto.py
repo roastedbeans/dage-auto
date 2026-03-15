@@ -205,6 +205,7 @@ CLASS_PATTERNS = {
 running = True
 is_paused = False
 _log_queue = None  # When set (by GUI), log lines go here instead of print
+_key_press_queue = None  # When set (by GUI), pressed keys go here for live skill highlight
 
 
 def _log(msg: str = "", end: str = "\n"):
@@ -358,6 +359,11 @@ def _press_key(char: str):
             ctrl.press(char)
             ctrl.release(char)
         time.sleep(_KEY_MIN_INTERVAL)
+    if _key_press_queue is not None and char in "123456":
+        try:
+            _key_press_queue.put_nowait(char)
+        except Exception:
+            pass
 
 
 # Classes that use a different targeting skill (e.g. Reload) — do not prepend auto (1)
@@ -513,6 +519,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     """
     global running, is_paused, target_pid, target_pids, target_app_name, use_psn_backend, LIVE_CONFIG
     globals()["_log_queue"] = log_queue
+    globals()["_key_press_queue"] = config.get("key_press_queue")
 
     class_name = config.get("class_name") or ""
     attack = config.get("attack", "")
@@ -588,6 +595,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
 
     _log("Done.")
     globals()["_log_queue"] = None
+    globals()["_key_press_queue"] = None
     LIVE_CONFIG = None
 
 

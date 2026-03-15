@@ -80,11 +80,13 @@ except ImportError:
 CLASS_OPTIONS = ["Custom"] + list(CLASSES.keys())
 ability_thread = None
 log_queue = None
+key_press_queue = None
 log_lines = []
 
 # OTP-style skill box styles
 _SKILL_BOX_INACTIVE = "background:#2d3748; border:2px solid #4a5568; border-radius:6px; color:#718096; font-size:14px; font-weight:bold;"
 _SKILL_BOX_ACTIVE = "background:#2b6cb0; border:2px solid #63b3ed; border-radius:6px; color:#ebf8ff; font-size:14px; font-weight:bold;"
+_SKILL_BOX_PRESSED = "background:#4299e1; border:2px solid #90cdf4; border-radius:6px; color:#ffffff; font-size:14px; font-weight:bold;"  # lighter blue shade = just pressed
 
 
 def build_config(cls, attack, delay, quest, no_consumable, no_bg, quest_pos, accept_drop, accept_drop_pos, pattern_index=None):
@@ -191,11 +193,13 @@ class MainPage(QWidget):
         skill_row = QHBoxLayout()
         skill_row.setSpacing(6)
         self.skill_boxes: list[QLabel] = []
+        self._active_skills: set = set()
         for i in range(1, 7):
             lb = QLabel(str(i))
             lb.setFixedSize(40, 40)
             lb.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lb.setStyleSheet(_SKILL_BOX_INACTIVE)
+            lb._pressed = False
             self.skill_boxes.append(lb)
             skill_row.addWidget(lb)
         combo_layout.addLayout(skill_row)
@@ -258,9 +262,35 @@ class MainPage(QWidget):
 
     def _update_skill_boxes(self, combo: str):
         """Highlight skill boxes 1-6 that appear in the combo."""
-        active = set(c for c in combo if c in "123456")
+        self._active_skills = set(c for c in combo if c in "123456")
         for i, lb in enumerate(self.skill_boxes):
-            lb.setStyleSheet(_SKILL_BOX_ACTIVE if str(i + 1) in active else _SKILL_BOX_INACTIVE)
+            if getattr(lb, "_pressed", False):
+                continue  # keep pressed state until timer reverts
+            lb.setStyleSheet(_SKILL_BOX_ACTIVE if str(i + 1) in self._active_skills else _SKILL_BOX_INACTIVE)
+
+    def _revert_skill_box(self, key: str):
+        """Revert a skill box from pressed back to active/inactive."""
+        if key not in "123456":
+            return
+        idx = int(key) - 1
+        if idx < 0 or idx >= len(self.skill_boxes):
+            return
+        lb = self.skill_boxes[idx]
+        lb._pressed = False
+        active = getattr(self, "_active_skills", set())
+        lb.setStyleSheet(_SKILL_BOX_ACTIVE if key in active else _SKILL_BOX_INACTIVE)
+
+    def _flash_skill_pressed(self, key: str):
+        """Highlight skill box as just pressed, revert after 250ms."""
+        if key not in "123456":
+            return
+        idx = int(key) - 1
+        if idx < 0 or idx >= len(self.skill_boxes):
+            return
+        lb = self.skill_boxes[idx]
+        lb._pressed = True
+        lb.setStyleSheet(_SKILL_BOX_PRESSED)
+        QTimer.singleShot(250, lambda k=key: self._revert_skill_box(k))
 
     def _update_combo_display(self):
         cls = self.class_combo.currentText()
@@ -418,7 +448,7 @@ class MainPage(QWidget):
                 self.quest_pos = (*self.quest_pos, *self._quest_a)
 
     def _start(self):
-        global ability_thread, log_queue, log_lines
+        global ability_thread, log_queue, key_press_queue, log_lines
         cls = self.class_combo.currentText()
         attack = self.attack_edit.text().strip()
         delay = self.delay_spin.value()
@@ -444,6 +474,8 @@ class MainPage(QWidget):
             return
         log_lines = []
         log_queue = queue.Queue()
+        key_press_queue = queue.Queue()
+        config["key_press_queue"] = key_press_queue
         ability_thread = threading.Thread(target=_run_ability_worker, args=(config, log_queue), daemon=True)
         ability_thread.start()
         self.log.clear()
@@ -454,25 +486,40 @@ class MainPage(QWidget):
         QTimer.singleShot(100, self._poll_log)
 
     def _poll_log(self):
-        global ability_thread, log_queue, log_lines
+        global ability_thread, log_queue, key_press_queue, log_lines
         read_log_queue()
         if log_lines:
             self.log.append("\n".join(log_lines))
             log_lines.clear()
+        if key_press_queue:
+            try:
+                while True:
+                    key = key_press_queue.get_nowait()
+                    self._flash_skill_pressed(key)
+            except queue.Empty:
+                pass
         if ability_thread and ability_thread.is_alive():
             QTimer.singleShot(100, self._poll_log)
         else:
             if ability_thread is not None:
                 # Thread finished on its own (not stopped by user)
                 ability_thread = None
+                key_press_queue = None
+                for lb in self.skill_boxes:
+                    lb._pressed = False
+                self._update_combo_display()
                 self.start_btn.setEnabled(True)
                 self.stop_btn.setEnabled(False)
                 self.log.append("Stopped.")
 
     def _stop(self):
-        global ability_thread
+        global ability_thread, key_press_queue
         aqw_auto.running = False
         ability_thread = None
+        key_press_queue = None
+        for lb in self.skill_boxes:
+            lb._pressed = False
+        self._update_combo_display()  # revert skill boxes to combo state
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.log.append("Stopped.")

@@ -11,10 +11,12 @@ import os
 if getattr(sys, "frozen", False):
     sys.path.insert(0, getattr(sys, "_MEIPASS", os.path.dirname(sys.executable)))
     # Fix SSL certificate verification — bundled libcrypto has a hardcoded CA path
-    # that doesn't exist at runtime. Point to certifi's bundled cacert.pem instead.
+    # that doesn't exist at runtime. Point to certifi's bundled cacert.pem if it exists.
     import certifi
-    os.environ["SSL_CERT_FILE"] = certifi.where()
-    os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+    cert_path = certifi.where()
+    if cert_path and os.path.isfile(cert_path):
+        os.environ["SSL_CERT_FILE"] = cert_path
+        os.environ["REQUESTS_CA_BUNDLE"] = cert_path
 
 
 def main():
