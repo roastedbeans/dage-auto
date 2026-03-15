@@ -62,7 +62,7 @@ CLASSES = {
     "cavalier guard": ("65243252342323423234", 1.0),  # filler for 6 (20s cd)
     "dragon of time": ("2354323232", 1.0),  # filler for 5 (8s cd)
     "blaze binder": ("235423232323232323", 1.0),  # filler for 4 (16s cd); 4 once per 18 keys
-    "legion revenant": ("432532132432", 1.0),  # filler avoids 2→5 delay
+    "legion revenant": ("432532132432", 1.5),  # filler avoids 2→5 delay
     "lord of order": ("234523423423", 1.0),  # filler for 4,5 (6s,8s cd)
     "void highlord": ("23452342342342", 1.0),  # filler for 5 (15s cd)
     "timeless chronomancer": ("42224253", 1.0),  # Use pattern selector for class-item variants
@@ -163,7 +163,7 @@ def _min_delay_for_combo(combo: str, cooldowns: dict) -> float:
 #   AQW Wiki: https://aqwwiki.wikidot.com/timeless-chronomancer
 CLASS_PATTERNS = {
     "legion revenant": [
-        ("432532132432", 1.0, "432532"),  # filler 132432 adds 6 keys; 12 keys between 5s
+        ("432532132432", 1.5, "432532"),  # filler 132432 adds 6 keys; 12 keys between 5s
     ],
     "dragon of time": [
         ("2354323232", 1.0, "DPS (2&4 cost 10% HP each)"),
