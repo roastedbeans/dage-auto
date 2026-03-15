@@ -10,6 +10,11 @@ import os
 # PyInstaller: add extracted data to path so aqw_auto can be imported
 if getattr(sys, "frozen", False):
     sys.path.insert(0, getattr(sys, "_MEIPASS", os.path.dirname(sys.executable)))
+    # Fix SSL certificate verification — bundled libcrypto has a hardcoded CA path
+    # that doesn't exist at runtime. Point to certifi's bundled cacert.pem instead.
+    import certifi
+    os.environ["SSL_CERT_FILE"] = certifi.where()
+    os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 
 def main():

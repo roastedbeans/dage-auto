@@ -19,6 +19,8 @@ import threading
 import urllib.request
 import zipfile
 
+import certifi
+
 # ── update check ──────────────────────────────────────────────────────────────
 
 _result: dict | None = None
@@ -37,9 +39,7 @@ def _check(repo: str, current_version: str) -> None:
     try:
         url = f"https://api.github.com/repos/{repo}/releases/latest"
         req = urllib.request.Request(url, headers={"User-Agent": "dage-auto-updater"})
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        ctx = ssl.create_default_context(cafile=certifi.where())
         with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
             data = json.loads(resp.read().decode())
         tag = data.get("tag_name", "")
@@ -104,12 +104,20 @@ def download_and_install(asset_url: str, app_path: str) -> None:
             tmp_dir = tempfile.mkdtemp(prefix="dage-update-")
             zip_path = os.path.join(tmp_dir, "update.zip")
 
-            def _reporthook(count: int, block: int, total: int) -> None:
-                global _dl_progress
-                if total > 0:
-                    _dl_progress = min(95, int(count * block * 100 / total))
-
-            urllib.request.urlretrieve(asset_url, zip_path, _reporthook)
+            ctx = ssl.create_default_context(cafile=certifi.where())
+            opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
+            with opener.open(asset_url) as resp:
+                total = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                with open(zip_path, "wb") as f:
+                    while True:
+                        chunk = resp.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total > 0:
+                            _dl_progress = min(95, int(downloaded * 100 / total))
             _dl_progress = 96
 
             extract_dir = os.path.join(tmp_dir, "extracted")

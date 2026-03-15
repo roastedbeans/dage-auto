@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec for Dage Auto standalone app
+from PyInstaller.utils.hooks import collect_data_files
 
 a = Analysis(
     ['launcher.py'],
@@ -8,6 +9,7 @@ a = Analysis(
         ('aqw_auto.py', '.'),
         ('version.py', '.'),
         ('updater.py', '.'),
+        *collect_data_files('certifi'),
     ],
     hiddenimports=[
         'aqw_auto',
@@ -15,6 +17,7 @@ a = Analysis(
         'version',
         'pyautogui',
         'pynput',
+        'certifi',
     ],
     hookspath=[],
     hooksconfig={},
