@@ -138,8 +138,9 @@ def download_and_install(asset_url: str, app_path: str) -> None:
                     "#!/bin/bash\n"
                     "sleep 1\n"
                     f"rm -rf '{app_path}'\n"
-                    f"cp -R '{new_app}' '{app_path}'\n"
-                    f"xattr -cr '{app_path}'\n"      # clear macOS quarantine
+                    f"ditto '{new_app}' '{app_path}'\n"          # preserves .app bundle structure
+                    f"xattr -cr '{app_path}'\n"                  # clear quarantine
+                    f"chmod -R u+x '{app_path}/Contents/MacOS'\n" # ensure executables are runnable
                     f"open '{app_path}'\n"
                     f"rm -rf '{tmp_dir}'\n"
                 )
