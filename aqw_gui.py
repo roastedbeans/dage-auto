@@ -176,8 +176,8 @@ class MainPage(QWidget):
         delay_row = QHBoxLayout()
         delay_row.addWidget(QLabel("Delay (s)"))
         self.delay_spin = QDoubleSpinBox()
-        self.delay_spin.setRange(0.1, 2)
-        self.delay_spin.setSingleStep(0.1)
+        self.delay_spin.setRange(0.1, 4)  # Chaos Avenger needs 3.15 (3.0 weapon speed + 0.15)
+        self.delay_spin.setSingleStep(0.05)
         self.delay_spin.setValue(1.0)
         delay_row.addWidget(self.delay_spin)
         layout.addLayout(delay_row)
@@ -365,9 +365,9 @@ class MainPage(QWidget):
             delay_val = preset[1]
             self.delay_spin.setValue(delay_val if delay_val is not None else 1.0)
             if cls in CLASS_PATTERNS or (delay_val is None and cls in CLASS_COOLDOWNS):
-                self.delay_spin.setToolTip("Auto-computed from skill cooldowns")
+                self.delay_spin.setToolTip("Weapon speed + 0.15s buffer (or auto from cooldowns)")
             else:
-                self.delay_spin.setToolTip("")
+                self.delay_spin.setToolTip("Weapon speed + 0.15s buffer")
         self._update_combo_display()
         self._update_live_config_if_running()
 

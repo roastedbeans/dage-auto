@@ -50,25 +50,54 @@ BACKGROUND_APP_ORDER = [
 # Note: 0x16=22 is key 6, 0x17=23 is key 5 on Mac number row
 MAC_KEY_CODES = {"1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22}
 
+# Weapon speed (seconds) — global cooldown between skills. From AQW wiki class pages.
+# Delay = weapon_speed + WEAPON_SPEED_BUFFER to avoid overlapping.
+CLASS_WEAPON_SPEED = {
+    "random": 1.0,
+    "archmage": 1.5,
+    "archpaladin": 2.0,
+    "blaze binder": 2.0,
+    "cavalier guard": 2.0,
+    "chaos avenger": 3.0,
+    "chrono shadowhunter": 0.15,
+    "dragon of time": 2.0,
+    "legion revenant": 1.5,
+    "lightcaster": 2.0,
+    "lord of order": 2.0,
+    "scarlet sorceress": 2.3,
+    "timeless chronomancer": 2.0,
+    "void highlord": 2.3,
+    "yami no ronin": 2.0,
+}
+WEAPON_SPEED_BUFFER = 0.15
+
+
+def _delay_for_class(class_name: str) -> float:
+    """Delay between skills = weapon_speed + buffer to avoid overlapping."""
+    speed = CLASS_WEAPON_SPEED.get(class_name, 1.0)
+    return round(speed + WEAPON_SPEED_BUFFER, 2)
+
+
 # Class combos: (combo, delay).
-# All delays are 1.0s — AQW ignores key presses while a skill is on cooldown,
-# so pressing every ~1s lets the game handle cooldown gating naturally.
+# Delays = weapon_speed + 0.15s. Filler tuned so cycle length ≈ longest cooldown,
+# ensuring long-cd skills are pressed as soon as ready. Per-skill cooldown waits
+# handle any gap; shorter cycles = more frequent long-cd presses.
 CLASSES = {
     "random": ("2345", 0.1),
-    "archmage": ("3214321432145", 1.0),  # Arcane Sigil (5) costs 40% HP
-    "lightcaster": ("423523232123423", 1.0),  # filler for 5 (15s cd)
-    "archpaladin": ("4235232323232323232323232", 1.0),  # filler for 4,5 (25s cd); 25 keys
-    "scarlet sorceress": ("52353253423", 1.0),  # filler for 5 (6s cd)
-    "cavalier guard": ("65243252342323423234", 1.0),  # filler for 6 (20s cd)
-    "dragon of time": ("2354323232", 1.0),  # filler for 5 (8s cd)
-    "blaze binder": ("235423232323232323", 1.0),  # filler for 4 (16s cd); 4 once per 18 keys
-    "legion revenant": ("432532132432", 1.5),  # filler avoids 2→5 delay
-    "lord of order": ("234523423423", 1.0),  # filler for 4,5 (6s,8s cd)
-    "void highlord": ("23452342342342", 1.0),  # filler for 5 (15s cd)
-    "timeless chronomancer": ("42224253", 1.0),  # Use pattern selector for class-item variants
-    "chrono shadowhunter": ("24444445", 1.0),  # 2=Reload, 4=FMJ bullets, 5=Silver Bullet nuke
-    "chaos avenger": ("3542242424242424", 1.0),  # filler for 3 (15s cd)
-    "yami no ronin": ("3225225", 1.0),  # Default: Dodge combo. Use pattern selector for others.
+    "archmage": ("3214321432145", 1.65),  # 5=3s; 13 keys
+    "lightcaster": ("423523232325", 2.15),  # 5=15s: 12 keys (was 15)
+    "archpaladin": ("4235232323232", 2.15),  # 4,5=25s: 13 keys (was 25)
+    "scarlet sorceress": ("52353253423", 2.45),  # 5=6s: 11 keys
+    "cavalier guard": ("65243252342", 2.15),  # 6=20s: 11 keys (was 20)
+    "dragon of time": ("2354323232", 2.15),  # 5=8s: 10 keys
+    "blaze binder": ("2354232323234", 2.15),  # 4=16s: 11 keys (was 18)
+    "legion revenant": ("432532132432", 1.65),  # 5=12s: 12 keys
+    "lord of order": ("234523423", 2.15),  # 5=8s: 9 keys (was 12)
+    "void highlord": ("234523423423", 2.45),  # 5=15s: 12 keys (was 14)
+    "timeless chronomancer": ("42224253", 2.15),  # 5=15s: 8 keys
+    "chrono shadowhunter": ("24444445", 0.3),  # 0.15 + 0.15 (gun class)
+    "chaos avenger": ("3542242424", 3.15),  # 3=15s: 10 keys (was 16)
+    "yami no ronin": ("3225225", 2.15),  # 5=6s: 7 keys
 }
 
 # Skill cooldowns (seconds) - from AQW wiki. Used to compute min delay.
@@ -83,8 +112,8 @@ CLASS_COOLDOWNS = {
     "lord of order": {"1": 2.0, "2": 4.0, "3": 5.0, "4": 6.0, "5": 8.0},
     "scarlet sorceress": {"1": 2.0, "2": 4.0, "3": 4.0, "4": 5.0, "5": 6.0},
     "void highlord": {"1": 2.3, "2": 4.0, "3": 5.0, "4": 4.0, "5": 15.0},
-    # Chrono ShadowHunter (same as Chrono ShadowSlayer): 2=Reload 6s, 4=FMJ 1.5s, 5=Silver Bullet 6s
-    "chrono shadowhunter": {"2": 6.0, "4": 1.5, "5": 6.0},
+    # Chrono ShadowHunter: 2=Reload 6s, 3=Tracer 3s (dodge), 4=FMJ 1.5s, 5=Silver Bullet 6s
+    "chrono shadowhunter": {"2": 6.0, "3": 3.0, "4": 1.5, "5": 6.0},
     # Chaos Avenger: 5=Fury Unleashed (35s) excluded — bot presses it opportunistically
     # every cycle; AQW ignores the press while still on cooldown.
     "chaos avenger": {"2": 6.0, "3": 15.0, "4": 6.0},
@@ -127,7 +156,7 @@ def _min_delay_for_combo(combo: str, cooldowns: dict) -> float:
     """
     Compute the minimum inter-skill delay so no skill repeats before its cooldown expires.
     Only used as a fallback when no explicit delay is set (e.g. custom combos without cooldown data).
-    run_ability_combo handles per-skill cooldown waiting at runtime, so preset classes use 1.0s.
+    run_ability_combo handles per-skill cooldown waiting at runtime. Preset delays = weapon_speed + 0.15s.
     """
     n = len(combo)
     min_d = 0.0
@@ -163,44 +192,49 @@ def _min_delay_for_combo(combo: str, cooldowns: dict) -> float:
 #   AQW Wiki: https://aqwwiki.wikidot.com/timeless-chronomancer
 CLASS_PATTERNS = {
     "legion revenant": [
-        ("432532132432", 1.5, "432532"),  # filler 132432 adds 6 keys; 12 keys between 5s
+        ("432532132432", 1.65, "432532"),  # 1.5 + 0.15
     ],
     "dragon of time": [
-        ("2354323232", 1.0, "DPS (2&4 cost 10% HP each)"),
-        ("235323232", 1.0, "Safe (no Burning Fates, no self-damage from 4)"),
+        ("2354323232", 2.15, "DPS (2&4 cost 10% HP each)"),  # 2.0 + 0.15
+        ("235323232", 2.15, "Safe (no Burning Fates, no self-damage from 4)"),
     ],
     # TCM: (combo, delay, display_name, consumable_hint).
     # Slot-6 cooldown derived from consumable_hint via TCM_CLASS_ITEM_COOLDOWNS.
     # Patterns containing "6" suppress the consumable thread (key 6 is pressed inside the combo).
-    # Delay 1.15s: TCM has tight cooldowns (2s, 2.5s); extra margin helps registration.
+    # Delay = 2.0 + 0.15 (weapon speed + buffer).
     "timeless chronomancer": [
         # Hourglasses
-        ("34222425", 1.15, "Power", "Hourglass of Power"),
-        ("42242253", 1.15, "Transience", "Hourglass of Transience"),
-        ("42224253", 1.15, "Paradise", "Hourglass of Paradise"),
+        ("34222425", 2.15, "Power", "Hourglass of Power"),
+        ("42242253", 2.15, "Transience", "Hourglass of Transience"),
+        ("42224253", 2.15, "Paradise", "Hourglass of Paradise"),
         # Entropic
-        ("634222425", 1.15, "Entropic (7s)", "Entropic Corruption"),
-        ("634222425", 1.15, "Power + Entropic", "Entropic Corruption"),
-        ("6342225", 1.15, "Entropic Short (5s)", "Entropic Corruption"),
-        ("63424225", 1.15, "Entropic (4 rift)", "Entropic Corruption"),
-        ("6342222425", 1.15, "Entropic (8s)", "Entropic Corruption"),
-        ("63242224225", 1.15, "Entropic (9s)", "Entropic Corruption"),
-        ("634222242245", 1.15, "Entropic (10s)", "Entropic Corruption"),
+        ("634222425", 2.15, "Entropic (7s)", "Entropic Corruption"),
+        ("634222425", 2.15, "Power + Entropic", "Entropic Corruption"),
+        ("6342225", 2.15, "Entropic Short (5s)", "Entropic Corruption"),
+        ("63424225", 2.15, "Entropic (4 rift)", "Entropic Corruption"),
+        ("6342222425", 2.15, "Entropic (8s)", "Entropic Corruption"),
+        ("63242224225", 2.15, "Entropic (9s)", "Entropic Corruption"),
+        ("634222242245", 2.15, "Entropic (10s)", "Entropic Corruption"),
         # Infinite
-        ("142224253", 1.15, "Infinite", "Infinite Corruption"),
-        ("6432422253", 1.15, "Transience + Infinite", "Infinite Corruption"),
-        ("6432222253", 1.15, "Transience + Infinite (short)", "Infinite Corruption"),
-        ("64324222422253", 1.15, "Transience + Infinite (ext)", "Infinite Corruption"),
+        ("142224253", 2.15, "Infinite", "Infinite Corruption"),
+        ("6432422253", 2.15, "Transience + Infinite", "Infinite Corruption"),
+        ("6432222253", 2.15, "Transience + Infinite (short)", "Infinite Corruption"),
+        ("64324222422253", 2.15, "Transience + Infinite (ext)", "Infinite Corruption"),
         # Entropic combos
-        ("4322462245", 1.15, "Entropic + Transience", "Entropic Corruption"),
-        ("4324224622453", 1.15, "Entropic + Infinite", "Infinite Corruption"),
+        ("4322462245", 2.15, "Entropic + Transience", "Entropic Corruption"),
+        ("4324224622453", 2.15, "Entropic + Infinite", "Infinite Corruption"),
         # Foresee
-        ("6424342234223422426422253", 1.15, "Foresee", "Foresee Corruption"),
+        ("6424342234223422426422253", 2.15, "Foresee", "Foresee Corruption"),
     ],
     "yami no ronin": [
-        ("3225225", 1.0, "Dodge"),
-        ("4344242425", 1.0, "Full offence"),
-        ("222345", 1.0, "Stack Tachi"),
+        ("3225225", 2.15, "Dodge"),  # 2.0 + 0.15
+        ("4344242425", 2.15, "Full offence"),
+        ("222345", 2.15, "Stack Tachi"),
+    ],
+    # Chrono ShadowHunter: 2=Reload, 3=Tracer (dodge), 4=FMJ (damage), 5=Silver Bullet
+    "chrono shadowhunter": [
+        ("24444445", 0.3, "FMJ"),  # damage
+        ("23333335", 0.3, "Dodge"),  # Tracer Rounds: +40% Dodge, +20% Defense
     ],
 }
 
@@ -420,7 +454,7 @@ def _combo_with_auto(combo: str, class_name: str | None = None) -> str:
 def run_ability_combo(combo: str, delay: float, class_name: str | None = None, use_live_config: bool = False, cooldown_overrides: dict | None = None):
     """Loop: auto (1) to target + combo keys. When use_live_config, reads combo/delay from LIVE_CONFIG each cycle (mid-fight switch).
 
-    Between different skills: waits `delay` seconds (the inter-skill gap, ~1s).
+    Between different skills: waits `delay` seconds (weapon speed + 0.15s buffer).
     Before re-pressing the same skill: waits max(delay, remaining cooldown) so
     it is never pressed before its individual cooldown expires.
     cooldown_overrides: per-skill overrides merged on top of base class cooldowns (e.g. {"6": 6.0} for Entropic).
