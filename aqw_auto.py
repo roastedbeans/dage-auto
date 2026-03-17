@@ -375,10 +375,11 @@ def _combo_with_auto(combo: str, class_name: str | None = None) -> str:
 def run_ability_combo(combo: str, delay: float, class_name: str | None = None, use_live_config: bool = False, cooldown_overrides: dict | None = None):
     """Loop: combo keys 2–6 only. Skill 1 runs independently via run_auto. When use_live_config, reads from LIVE_CONFIG each cycle.
 
-    Between different skills: waits `delay` (1.20s). Between same skill: waits skill cooldown before re-press.
+    Between different skills: waits `delay` (1.20s). Between consecutive same skill: waits skill cooldown before re-press.
     cooldown_overrides: per-skill overrides merged on top of base class cooldowns (e.g. {"6": 6.0} for Entropic).
     """
     last_press: dict[str, float] = {}  # key → timestamp of last press (2–6 only)
+    prev_key: str | None = None  # the key pressed immediately before the current one
 
     while running:
         if use_live_config and LIVE_CONFIG:
@@ -386,6 +387,7 @@ def run_ability_combo(combo: str, delay: float, class_name: str | None = None, u
             new_class = LIVE_CONFIG.get("class_name", class_name)
             if new_combo != combo or new_class != class_name:
                 last_press.clear()  # reset cooldown tracking on class/combo switch
+                prev_key = None
             combo = new_combo
             delay = LIVE_CONFIG.get("delay", delay)
             class_name = new_class
@@ -404,14 +406,17 @@ def run_ability_combo(combo: str, delay: float, class_name: str | None = None, u
                     break
                 cd = cooldowns.get(key, 0)
                 now = time.time()
-                if cd > 0 and key in last_press:
+                # Only use cooldown-wait when current key is the same as immediately preceding key (consecutive same-skill).
+                # All other transitions (different skill, or same skill returning after others) use delay.
+                if cd > 0 and prev_key is not None and key == prev_key and key in last_press:
                     elapsed = now - last_press[key]
-                    wait = max(0, cd - elapsed + _COOLDOWN_BUFFER)  # same skill: wait cooldown
+                    wait = max(0, cd - elapsed + _COOLDOWN_BUFFER)  # consecutive same skill: wait cooldown
                 else:
-                    wait = delay  # different skill: wait 1.20s
+                    wait = delay  # different skill (or first press): wait delay
                 _sleep(wait)
                 _press_key(key)
                 last_press[key] = time.time()
+                prev_key = key
         _sleep(0.03)
 
 
@@ -427,7 +432,8 @@ def run_consumable(interval: float = 6.0):
     """Press consumable key (6) periodically. Reads consumable_interval from LIVE_CONFIG each cycle when available."""
     while running:
         current_interval = LIVE_CONFIG.get("consumable_interval", interval) if LIVE_CONFIG else interval
-        if not is_paused and consumable_enabled:
+        current_combo = LIVE_CONFIG.get("combo", "") if LIVE_CONFIG else ""
+        if not is_paused and consumable_enabled and "6" not in current_combo:
             _press_key("6")
         _sleep(current_interval)
 
@@ -449,7 +455,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     config: class_name, attack, delay, no_consumable, no_background
     Supports mid-fight combo switching via LIVE_CONFIG when class/pattern changes.
     """
-    global running, is_paused, target_pid, target_pids, target_app_name, use_psn_backend, LIVE_CONFIG
+    global running, is_paused, target_pid, target_pids, target_app_name, use_psn_backend, LIVE_CONFIG, consumable_enabled
     globals()["_log_queue"] = log_queue
     globals()["_key_press_queue"] = config.get("key_press_queue")
 
@@ -461,11 +467,6 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     pattern_index = config.get("pattern_index")
 
     combo, delay, cooldown_overrides = resolve_combo_delay(class_name, pattern_index, attack, base_delay)
-
-    # If combo already includes key 6, suppress the consumable thread to avoid double-pressing
-    combo_has_6 = "6" in combo
-    if combo_has_6:
-        no_consumable = True
 
     # Consumable interval: use per-pattern key-6 override when available, else TCM base (20s for hourglasses), else 6s
     if class_name == "timeless chronomancer":
@@ -499,7 +500,7 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     delay_str = f"{delay}s"
     _log(f"{pattern_name}  Combo: {_combo_with_auto(combo, class_name)}  Delay: {delay_str}")
     _log(f"  Auto (key 1): {'Off' if class_name in CLASSES_NO_AUTO_PREPEND else f'On (every {auto_interval:.1f}s)'}")
-    _log(f"  Consumable (key 6): {'Off (6 in combo)' if no_consumable and '6' in combo else 'Off' if no_consumable else f'On (every {consumable_interval:.0f}s)'}")
+    _log(f"  Consumable (key 6): {'Off' if no_consumable else f'On (every {consumable_interval:.0f}s, skipped when 6 in combo)'}")
     _log(f"  Target app: {target_app_name or 'focused window'}")
     running = True
     consumable_enabled = not no_consumable
@@ -508,11 +509,10 @@ def run_ability_from_gui(config: dict, log_queue: queue.Queue):
     threads = [
         threading.Thread(target=run_ability_combo, args=(combo, delay, class_name, True, cooldown_overrides), daemon=True),
         threading.Thread(target=run_stdin_fallback, daemon=True),
+        threading.Thread(target=run_consumable, args=(consumable_interval,), daemon=True),
     ]
     if class_name not in CLASSES_NO_AUTO_PREPEND and auto_interval > 0:
         threads.append(threading.Thread(target=run_auto, args=(auto_interval,), daemon=True))
-    if not combo_has_6:
-        threads.append(threading.Thread(target=run_consumable, args=(consumable_interval,), daemon=True))
 
     for t in threads:
         t.start()
