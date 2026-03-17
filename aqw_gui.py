@@ -162,6 +162,7 @@ class MainPage(QWidget):
         delay_row = QHBoxLayout()
         delay_row.addWidget(QLabel("Delay (s)"))
         self.delay_spin = QDoubleSpinBox()
+        self.delay_spin.setDecimals(1)
         self.delay_spin.setRange(0.1, 4)
         self.delay_spin.setSingleStep(0.05)
         self.delay_spin.setValue(1.20)  # SKILL_DELAY: between skills 2-6; auto (1) is independent
