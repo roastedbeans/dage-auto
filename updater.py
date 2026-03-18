@@ -21,6 +21,7 @@ import zipfile
 
 import certifi
 import sys
+import platform
 
 # ── SSL context (handles frozen app where certifi path may be wrong) ────────────
 
@@ -67,10 +68,21 @@ def _check(repo: str, current_version: str) -> None:
         tag = data.get("tag_name", "")
         html_url = data.get("html_url", f"https://github.com/{repo}/releases")
         assets = data.get("assets", [])
-        asset_url = next(
-            (a["browser_download_url"] for a in assets if a["name"].endswith(".zip")),
-            None,
-        )
+        # Prefer platform-specific zip: macOS vs Ubuntu
+        if platform.system() == "Darwin":
+            preferred = "Dage-Auto-macOS.zip"
+        elif platform.system() == "Linux":
+            preferred = "Dage-Auto-Ubuntu.zip"
+        else:
+            preferred = None
+        asset_url = None
+        for a in assets:
+            if a["name"].endswith(".zip"):
+                if a["name"] == preferred:
+                    asset_url = a["browser_download_url"]
+                    break
+                if asset_url is None:
+                    asset_url = a["browser_download_url"]
         if _parse_version(tag) > _parse_version(current_version):
             _result = {"available": True, "version": tag, "url": html_url, "asset_url": asset_url}
         else:

@@ -15,15 +15,21 @@ Opens a desktop window. Pick class, set delay, Start/Stop.
 
 ## Build standalone app (no Python needed)
 
+**macOS:**
 ```bash
 ./build.sh
 ```
-
 Output: `dist/Dage Auto.app`
+
+**Ubuntu/Linux:**
+```bash
+./build-ubuntu.sh
+```
+Output: `dist/Dage Auto`
 
 ## Using the macOS standalone app
 
-1. **Download** the latest release: [Releases](https://github.com/roastedbeans/dage-auto/releases) → download `Dage-Auto-macOS.zip`
+1. **Download** the latest release: [Releases](https://github.com/roastedbeans/dage-auto/releases) → `Dage-Auto-macOS.zip` (macOS) or `Dage-Auto-Ubuntu.zip` (Linux)
 2. **Extract** the zip (double-click or right-click → Open)
 3. **Fix quarantine** (if you see "damaged and can't be opened"):
    - Double-click `fix-quarantine.command` in the folder, or
@@ -33,7 +39,9 @@ Output: `dist/Dage Auto.app`
 
 **If you rebuilt or updated the app:** Remove the old Dage Auto from Accessibility first, then add the new app again. Old entries can block the new build from working.
 
-The zip includes step images (`1st-step.png`, `2nd-step.png`, `3rd-step.png`) as a visual guide.
+**Ubuntu/Linux:** Extract the zip, then run `./Dage Auto` from the extracted folder. Grant Accessibility if prompted. The macOS zip includes step images; the Ubuntu zip contains the executable only.
+
+The zip includes step images (`1st-step.png`, `2nd-step.png`, `3rd-step.png`) as a visual guide (macOS only).
 
 ## Creating a release
 
